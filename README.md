@@ -292,6 +292,8 @@ answer, and use a confined open for the actual access.
   question, unverified.
 * [Proven-Commons/path](https://github.com/Proven-Commons/path): a planned verified model of Go's
   `path.Clean`.
+* [URLFence](https://github.com/hiroki-abe-58/urlfence): the same approach for the URLs an agent
+  may fetch (an allowlist of hosts, with Lean 4 proofs about how a URL is read).
 
 ## Licence
 
