@@ -153,6 +153,21 @@ stdin, the conversion between `String` and `List Char`, JSON output and exit cod
 
 ## Usage
 
+Install the CLI from PyPI (once the first release is published):
+
+```sh
+python -m pip install --only-binary=:all: pathfence
+pathfence check --allow /home/u/project --deny /home/u/project/.git -- src/main.rs
+```
+
+Wheels bundle the Lean executable: no Lean installation or Python runtime dependencies
+are needed. Supported platforms are Linux (x86-64 and ARM64) and macOS (Intel and Apple
+Silicon), with Python 3.10 or newer. Windows users can use WSL. The path rules remain
+POSIX-only on every platform. `python -m pathfence` also runs the CLI.
+
+For source builds, install the pinned Lean toolchain. Release maintainers can follow
+[Publishing PathFence](docs/publishing.md).
+
 Build with [elan](https://github.com/leanprover/elan) installed:
 
 ```sh
