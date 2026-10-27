@@ -66,6 +66,10 @@ All theorems are in [`PathFence/`](PathFence), checked by Lean v4.35.0, with no 
 Lean's standard axioms (`propext`, `Classical.choice`, `Quot.sound`; see
 [`scripts/audit.sh`](scripts/audit.sh)).
 
+The table lists the 25 published statements, which `scripts/audit.sh` requires by name. The
+library's environment holds 138 theorem declarations in all, counting helper lemmas and the
+equation lemmas Lean generates. The audit checks the axioms of every one of them.
+
 | Theorem | Statement |
 | --- | --- |
 | `check_allow_iff` | `check` allows `p` **iff** the input resolves to `p`, `p` is within some allowed root, and `p` is within no denied root. |
@@ -115,10 +119,16 @@ stdin, the conversion between `String` and `List Char`, JSON output and exit cod
     with root names and near misses (`w`, `wx`, `w.`) among the pieces. It follows the same rules,
     so it catches implementation mistakes, not mistakes in the rules;
   * `posixpath.normpath` for absolute inputs;
-  * on Linux 5.6+, the kernel itself. For 1500 random relative paths the test creates the
-    directories, then calls `openat2(RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS)`. PathFence allows a
-    path exactly when the kernel opens it, and reports the directory the kernel opened (read back
-    from `/proc/self/fd`). It rejects with `escapes` exactly when the kernel refuses with `EXDEV`.
+  * on Linux 5.6+, the kernel itself, on a directory tree with no symlinks. For 1500 random
+    relative paths the test creates the directories, then calls
+    `openat2(RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS)`. On that tree:
+    * PathFence allows a path exactly when the kernel opens it, and reports the directory the
+      kernel opened (read back from `/proc/self/fd`), also when `rel` is opened beneath `root`;
+    * it rejects with `escapes` exactly when the kernel refuses with `EXDEV`.
+
+    This is agreement on a tested domain, not a proof that the rules are the kernel's. With
+    symlinks, the two differ by design; see below.
+  * the safe-open example against symlinks into a denied root and out of the workspace.
 * `tests/mutants.py` checks the tests themselves. It rebuilds the CLI with eleven plausible bugs and
   requires each one to make the suite fail. The bugs include the CVE-style string prefix, an
   off-by-one in the beneath rule, an ignored deny root, accepting the empty input, and a wrong
@@ -140,7 +150,7 @@ pathfence check (--allow DIR | --allow-all) ... [--deny DIR ...] [--base DIR] [-
 * Paths go after `--`. Anything before `--` that is not an option is an error, so a path such as
   `--stdin` can never be taken for an option.
 * `--stdin` reads one path per line, after any paths given after `--`.
-  * The whole input is read before the first answer; memory use is about 25 times the input size.
+  * The whole input is read before the first answer (see [Performance](#performance)).
   * Lines are split on `\n` only, so a `\r` stays part of the name.
 * `--base` defaults to the first `--allow` root.
 * `--allow /` is refused, so that an empty variable in `--allow "$ROOT/"` cannot allow every path.
@@ -172,11 +182,32 @@ int fd = syscall(SYS_openat2, rootfd, rel, &how, sizeof how);
 
 Opening the returned `path` with a plain `open()` follows symlinks and defeats the check.
 
+[`examples/safe_open.py`](examples/safe_open.py) does both steps in Python (`safe_open(path,
+allow=…, deny=…)` returns a file descriptor, or raises). Its test,
+[`tests/test_safe_open.py`](tests/test_safe_open.py), sets up a workspace with a denied `.git`, a
+symlink `cfg -> .git` and a symlink `out -> /etc`. The lexical check allows `cfg/config` and
+`out/passwd`, and the confined open refuses both with `ELOOP`.
+
 Go's `os.Root` (`os.OpenRoot(root)`, then `Root.Open(rel)`) and Rust's `cap_std::fs::Dir` stop
 escapes from `root`. They still follow symlinks that stay inside it, so they do **not** enforce deny
 roots. With `--deny /w/.git`, a link `/w/cfg -> .git` makes `cfg/config` an allowed path that opens
 `/w/.git/config`. Where deny roots matter, refuse symlinks (`RESOLVE_NO_SYMLINKS`, or `O_NOFOLLOW` on
 every component), or make sure nobody can create symlinks inside the roots.
+
+### Performance
+
+[`tests/bench.py`](tests/bench.py) measures throughput and memory. One run on an Intel Core Ultra
+9 285K (WSL2, Linux 6.6) gave:
+
+| Input | Time | Peak memory |
+| --- | --- | --- |
+| 1,000 paths on the command line | 0.01 s | 19 MiB |
+| 100,000 paths on stdin (1.9 MB) | 0.34 s | 62 MiB |
+| one path of 100,000 segments | 0.04 s | 63 MiB |
+| one 1 MB name | 0.16 s | 141 MiB |
+
+Memory grows with the input: paths are lists of characters, and stdin is read whole. Expect roughly
+30 to 140 times the input size, so split very large batches.
 
 ## What it does not cover
 
