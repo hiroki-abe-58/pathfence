@@ -17,8 +17,10 @@ They show what PathFence decides for those inputs. They do not reproduce the ori
 namespace PathFence.Examples
 open PathFence
 
-/-- A root from a string (examples only; `/` if the string is not a valid root). -/
-def root (s : String) : Path := (parseRoot s).getD []
+/-- A root from a string (examples only). A string that is not a canonical root gives `[[]]`, which
+is not a valid path and contains no resolved path, so a typo makes the examples fail instead of
+silently meaning `/`. -/
+def root (s : String) : Path := (parseRoot s).getD [[]]
 
 def check1 (r s : String) : Decision := confineString (root r) s
 

@@ -18,3 +18,5 @@ jobs:
         run: ./scripts/audit.sh
       - name: CLI tests (fixed cases, Python model, normpath, openat2)
         run: python3 -m unittest discover -s tests -v
+      - name: Mutation check (every planted bug must fail the tests)
+        run: python3 tests/mutants.py

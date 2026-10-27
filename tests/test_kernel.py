@@ -100,6 +100,14 @@ class KernelBeneath(unittest.TestCase):
                             self.assertEqual(r["decision"], "allow")
                             self.assertEqual(r["path"], opened)
                             self.assertEqual(r["root"], base)
+                            # Opening `rel` beneath `root`, as callers are told to, reaches the same
+                            # directory.
+                            fd2, err2 = openat2(dirfd, r["rel"])
+                            self.assertGreaterEqual(fd2, 0, f"errno {err2}")
+                            try:
+                                self.assertEqual(os.readlink(f"/proc/self/fd/{fd2}"), opened)
+                            finally:
+                                os.close(fd2)
                             allowed += 1
                         else:
                             self.assertEqual(err, errno.EXDEV)  # the kernel refused to leave the base

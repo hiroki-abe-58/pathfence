@@ -95,10 +95,19 @@ stdin, the conversion between `String` and `List Char`, JSON output and exit cod
 * `lake build` checks the proofs and runs the `#guard` examples.
 * `scripts/audit.sh`:
   * rejects `sorry`, `admit`, `native_decide`, axioms, `implemented_by`/`extern`, `partial`/`unsafe`,
-    kernel-skipping options and metaprogramming commands anywhere in the library;
-  * lists every declaration of the library (generated, not maintained by hand), and fails on any
-    axiom outside the standard three;
+    `#eval`/`initialize`, kernel-skipping options and metaprogramming commands in the library
+    source;
+  * checks that `lakefile.lean` builds just the library and the CLI, with no dependencies and no extra
+    compiler options;
+  * checks the compiled environment:
+    * the library imports only `Init` and its own modules;
+    * no library declaration has its compiled code replaced (`implemented_by`, `extern`);
+    * every declaration (the list is generated, not maintained by hand) depends on no axiom outside
+      the standard three;
   * replays every module through the kernel's own checker (`leanchecker`).
+
+  It does not check that `Main.lean` calls the library as documented; that is left to review and
+  the tests.
 * `tests/` (Python, standard library only) runs the built CLI against:
   * fixed cases, including the CVE-style inputs, invalid UTF-8, option-like paths and
     non-canonical roots;
@@ -110,9 +119,10 @@ stdin, the conversion between `String` and `List Char`, JSON output and exit cod
     directories, then calls `openat2(RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS)`. PathFence allows a
     path exactly when the kernel opens it, and reports the directory the kernel opened (read back
     from `/proc/self/fd`). It rejects with `escapes` exactly when the kernel refuses with `EXDEV`.
-* Mutation check: eight plausible bugs in the decision were tried, including the CVE-style string
-  prefix, an off-by-one in the beneath rule, an ignored deny root and accepting the empty input.
-  Each one makes the test suite fail.
+* `tests/mutants.py` checks the tests themselves. It rebuilds the CLI with eleven plausible bugs and
+  requires each one to make the suite fail. The bugs include the CVE-style string prefix, an
+  off-by-one in the beneath rule, an ignored deny root, accepting the empty input, and a wrong
+  `root` or `rel`.
 
 ## Usage
 
@@ -129,11 +139,14 @@ pathfence check (--allow DIR | --allow-all) ... [--deny DIR ...] [--base DIR] [-
 
 * Paths go after `--`. Anything before `--` that is not an option is an error, so a path such as
   `--stdin` can never be taken for an option.
-* `--stdin` reads one path per line, after any paths given after `--`. The whole input is read
-  before the first answer, and lines are split on `\n` only, so a `\r` stays part of the name.
+* `--stdin` reads one path per line, after any paths given after `--`.
+  * The whole input is read before the first answer; memory use is about 25 times the input size.
+  * Lines are split on `\n` only, so a `\r` stays part of the name.
 * `--base` defaults to the first `--allow` root.
 * `--allow /` is refused, so that an empty variable in `--allow "$ROOT/"` cannot allow every path.
   Use `--allow-all` if that is what you mean.
+  * `--allow-all` counts as a root after all `--allow` roots, wherever it appears.
+  * With no `--allow` root, the base for relative paths is `/`.
 * One JSON object per path, in order, in ASCII (other characters are `\u` escapes). Allowed results
   carry `root` and `rel`.
 * Exit status: 0 if at least one path was checked and every path is allowed, 1 if any is denied or
@@ -157,8 +170,13 @@ struct open_how how = { .flags = O_RDONLY | O_CLOEXEC,
 int fd = syscall(SYS_openat2, rootfd, rel, &how, sizeof how);
 ```
 
-With Go, use `os.OpenRoot(root)` and then `Root.Open(rel)`; with Rust, use `cap_std::fs::Dir`.
 Opening the returned `path` with a plain `open()` follows symlinks and defeats the check.
+
+Go's `os.Root` (`os.OpenRoot(root)`, then `Root.Open(rel)`) and Rust's `cap_std::fs::Dir` stop
+escapes from `root`. They still follow symlinks that stay inside it, so they do **not** enforce deny
+roots. With `--deny /w/.git`, a link `/w/cfg -> .git` makes `cfg/config` an allowed path that opens
+`/w/.git/config`. Where deny roots matter, refuse symlinks (`RESOLVE_NO_SYMLINKS`, or `O_NOFOLLOW` on
+every component), or make sure nobody can create symlinks inside the roots.
 
 ## What it does not cover
 
@@ -178,11 +196,14 @@ disagree:
   distinguished.
 * **Case-insensitive or normalising file systems** (macOS, Windows). `/W` and `/w`, or the NFC and
   NFD forms of a name, are different strings to PathFence but may be the same file.
-* **Where the kernel disagrees.** Some inputs that resolve lexically fail at open time:
-  * `file/..`, `file/` and `file/.` give `ENOTDIR` when `file` is not a directory;
+* **Where the kernel disagrees.** Some inputs fail when the kernel opens them as written, but
+  PathFence normalises them lexically and allows them:
+  * `file/..`, `file/` and `file/.` give `ENOTDIR` from the kernel when `file` is not a directory;
   * `missing/../d` gives `ENOENT`.
 
-  These fail closed at open time and never escape.
+  Their `rel` (`.`, `file` and `d`) opens fine. Nothing escapes the root, but the file opened can
+  differ from the one the original input would have reached, or the input would have failed
+  entirely.
 * **Windows paths.** No drive letters, UNC paths or `\` separators. POSIX only.
 * **Bytes that are not UTF-8.** The library works on Unicode text and the CLI rejects such input, so
   POSIX names that are not UTF-8 cannot be allowed.
@@ -206,7 +227,7 @@ answer, and use a confined open for the actual access.
 
 ## Licence
 
-Apache-2.0. See [LICENSE](LICENSE).
+Copyright 2026 the PathFence authors. Apache-2.0; see [LICENSE](LICENSE).
 
 Written with AI assistance (Claude Code, Claude Opus 5.5). It was reviewed in separate AI-assisted
 review sessions (also Claude Opus 5.5), not yet by a human expert.

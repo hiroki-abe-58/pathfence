@@ -31,6 +31,8 @@ class Differential(unittest.TestCase):
             (["/w/a"], ["/w/a/b"], None),
             (["/w", "/tmp/s"], ["/w/b", "/w/.git"], "/w/c"),
             (["/"], ["/w"], "/w"),
+            # Overlapping roots: the first one that contains the path must be reported.
+            (["/w/a", "/w"], ["/w/b"], "/w"),
         ]
         for allow, deny, base in policies:
             inputs = [random_path(rng) for _ in range(1500)]
