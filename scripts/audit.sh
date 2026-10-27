@@ -31,7 +31,7 @@ fi
 
 # 3. Environment: imports, replaced implementations, and axioms of every declaration.
 out=$(lake env lean scripts/Axioms.lean)
-bad_imports=$(grep '^IMPORT ' <<<"$out" | awk '$3 !~ /^(Init|PathFence)(\.|$)/' || true)
+bad_imports=$(grep '^IMPORT ' <<<"$out" | awk '$3 !~ /^(Init|PathFence)([.]|$)/' || true)
 [ -z "$bad_imports" ] || fail "the library imports other modules: $bad_imports"
 ! grep -E '^(IMPLBY|EXTERN) ' <<<"$out" || fail "compiled code of a library declaration is replaced"
 lines=$(grep '^AXIOMS ' <<<"$out" || true)
