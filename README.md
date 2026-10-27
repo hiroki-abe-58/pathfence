@@ -66,9 +66,11 @@ All theorems are in [`PathFence/`](PathFence), checked by Lean v4.35.0, with no 
 Lean's standard axioms (`propext`, `Classical.choice`, `Quot.sound`; see
 [`scripts/audit.sh`](scripts/audit.sh)).
 
-The table lists the 25 published theorems. Their exact statements are pinned in
-[`scripts/statements.expected`](scripts/statements.expected), and the audit fails if one is
-missing, renamed or weakened. The library's modules hold 138 theorem declarations in all, counting
+The table lists the 25 published theorems. Their statements are pinned in
+[`scripts/statements.expected`](scripts/statements.expected), both as printed text and as a hash of
+the statement together with every PathFence definition it depends on, directly or indirectly. The
+audit fails if a theorem is missing or renamed, if its statement changes, or if any of those
+definitions changes. The library's modules hold 138 theorem declarations in all, counting
 helper lemmas and the equation lemmas Lean generates. The audit checks the axioms of every
 declaration.
 
@@ -113,11 +115,13 @@ stdin, the conversion between `String` and `List Char`, JSON output and exit cod
     * no library declaration has its compiled code replaced (`implemented_by`, `extern`);
     * every declaration (the list is generated, not maintained by hand) depends on no axiom outside
       the standard three;
-    * the 25 published statements match `scripts/statements.expected`;
+    * the 25 published statements, and the definitions they depend on, match
+      `scripts/statements.expected`;
   * replays every module through the kernel's own checker (`leanchecker`).
 
-  In CI, `lake build` runs before the audit, so a malicious build configuration would run before the
-  audit flags it. The audit makes such a change visible; it does not sandbox the build.
+  CI checks the pins (`audit.sh --pins`) before anything builds. The audit does not protect its own
+  inputs: `scripts/audit.sh`, `scripts/Axioms.lean`, `scripts/statements.expected` and the CI
+  workflow. A change to them shows in the diff, but whoever can change them can change the audit.
 
   It does not check that `Main.lean` calls the library as documented; that is left to review and
   the tests.

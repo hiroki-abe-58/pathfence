@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 # Proof audit: no escape hatches in the library, a pinned build configuration, only Lean's standard
 # axioms behind any of its declarations, no other code reaching it, compiled code that is the proven
-# code, the published theorem statements unchanged, and every module accepted by the kernel's own
-# checker.
+# code, the published theorem statements and the definitions they depend on unchanged, and every
+# module accepted by the kernel's own checker.
 #
 # What this does not check: that Main.lean (the CLI) calls the library as documented. That is
-# ordinary code, covered by review and by the tests.
+# ordinary code, covered by review and by the tests. Nor does it protect its own inputs (this file,
+# scripts/Axioms.lean, scripts/statements.expected, the CI workflow): it makes changes visible in a
+# diff; it is not a gate against whoever can change those files.
 #
 #   scripts/audit.sh                     run the audit
-#   scripts/audit.sh --print-statements  print the published statements (to review a change to
-#                                        scripts/statements.expected)
+#   scripts/audit.sh --pins              only check the pinned build configuration (needs no Lake;
+#                                        CI runs it before anything builds)
+#   scripts/audit.sh --print-statements  print the published statements and dependency hashes (to
+#                                        review a change to scripts/statements.expected)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -30,6 +34,7 @@ pin lakefile.lean d0a322417122730651831e66b40e4d8194c69026160f451943c37100c6fd68
 pin lean-toolchain ca5f1f601d34c49079e38d7e7041eb0f2a9c227fbc1df0f404820069a052330c
 pin lake-manifest.json 7e75ddb0deb0f4d4f1963a08ef3657a5319feb7f67908bc9936fca79c764c3ac
 [ ! -e lakefile.toml ] || fail "lakefile.toml must not exist"
+if [ "${1:-}" = "--pins" ]; then echo "audit: pinned build configuration OK"; exit 0; fi
 
 # 2. Source: no `sorry`/`admit`, `native_decide`, new axioms or opaque constants,
 #    `implemented_by`/`extern`, `partial`/`unsafe` definitions, options that skip kernel checking,
@@ -42,14 +47,15 @@ if grep -nE '\b(sorry|admit|native_decide|axiom|opaque|implemented_by|extern|par
 fi
 
 # 3. Environment: imports, replaced implementations, axioms of every declaration, and the published
-#    statements.
+#    statements with the definitions they depend on.
 out=$(lake env lean scripts/Axioms.lean)
-statements() {
-  for t in $PUBLISHED; do
-    grep -F "STATEMENT PathFence.$t : " <<<"$out" || fail "missing theorem PathFence.$t"
-  done
-}
-if [ "${1:-}" = "--print-statements" ]; then statements; exit 0; fi
+published_lines=""
+for t in $PUBLISHED; do
+  s=$(grep -F "STATEMENT PathFence.$t : " <<<"$out") || fail "missing theorem PathFence.$t"
+  d=$(grep -F "DEPHASH PathFence.$t " <<<"$out") || fail "missing dependency hash for PathFence.$t"
+  published_lines+="$s"$'\n'"$d"$'\n'
+done
+if [ "${1:-}" = "--print-statements" ]; then printf '%s' "$published_lines"; exit 0; fi
 
 bad_imports=$(grep '^IMPORT ' <<<"$out" | awk '$3 !~ /^(Init|PathFence)([.]|$)/' || true)
 [ -z "$bad_imports" ] || fail "the library imports other modules: $bad_imports"
@@ -61,10 +67,12 @@ bad=$(sed -E 's/^AXIOMS [a-z]+ [^ ]+: \[(.*)\]$/\1/' <<<"$lines" | tr ',' '\n' |
   | grep -vxE 'propext|Classical\.choice|Quot\.sound' | sort -u || true)
 [ -z "$bad" ] || fail "non-standard axioms: $bad"
 
-# The published theorems must exist with exactly the reviewed statements: a weakened or renamed
-# theorem fails here.
-diff <(statements) scripts/statements.expected >/dev/null \
-  || { diff <(statements) scripts/statements.expected >&2 || true; fail "published statements differ from scripts/statements.expected"; }
+# The published theorems must exist with exactly the reviewed statements and dependency hashes: a
+# renamed theorem, a weakened statement or a changed definition behind it fails here.
+if ! diff <(printf '%s' "$published_lines") scripts/statements.expected >/dev/null; then
+  diff <(printf '%s' "$published_lines") scripts/statements.expected >&2 || true
+  fail "published statements or the definitions they depend on differ from scripts/statements.expected"
+fi
 thms=$(grep -c '^AXIOMS theorem ' <<<"$lines")
 decls=$(wc -l <<<"$lines")
 imports=$(grep -c '^IMPORT ' <<<"$out")
@@ -73,4 +81,4 @@ published=$(wc -w <<<"$PUBLISHED")
 # 4. The kernel's own checker replays every module.
 lake env leanchecker PathFence >/dev/null || fail "leanchecker rejected a module"
 
-echo "audit: OK ($decls declarations, $thms theorems, standard axioms only; $published published statements unchanged; $imports imports, all Init or PathFence; no replaced implementations; pinned build configuration; leanchecker passed)"
+echo "audit: OK ($decls declarations, $thms theorems, standard axioms only; $published published statements and their definitions unchanged; $imports imports, all Init or PathFence; no replaced implementations; pinned build configuration; leanchecker passed)"
