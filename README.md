@@ -151,6 +151,11 @@ stdin, the conversion between `String` and `List Char`, JSON output and exit cod
   off-by-one in the beneath rule, an ignored deny root, accepting the empty input, and a wrong
   `root` or `rel`.
 
+[`scripts/reproduce.sh`](scripts/reproduce.sh) runs all of this from a fresh clone of the current
+commit in a temporary directory: the pins, the build, the audit, the tests and the mutation check,
+and prints the binary's SHA-256. A skipped test fails it, so it needs Linux 5.6 or later with
+openat2 available.
+
 ## Usage
 
 Install the CLI from PyPI (once the first release is published):
