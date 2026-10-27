@@ -1,14 +1,18 @@
 """The two layers together (examples/safe_open.py): PathFence decides, openat2 opens.
 
 A workspace with a denied `.git`, a symlink into it and a symlink out of the workspace: the lexical
-check alone allows both symlinked paths, and the confined open refuses them.
+check alone allows both symlinked paths, and the confined open refuses them. Unusable answers from
+the binary, simulated by replacing `subprocess.run`, refuse before anything is opened.
 """
 import errno
+import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from common import BIN, ROOT
 from test_kernel import openat2_available
@@ -67,6 +71,62 @@ class SafeOpen(unittest.TestCase):
         # (and does not become the two requests `src` and `../../etc/passwd`).
         r = safe_open.check("src\n../../etc/passwd", **self.policy)
         self.assertEqual((r["decision"], r["path"], r["rel"]), ("allow", self.w + "/etc/passwd", "etc/passwd"))
+
+
+def pathfence_says(code, stdout, stderr=b""):
+    return mock.patch.object(safe_open.subprocess, "run",
+                             return_value=subprocess.CompletedProcess([], code, stdout, stderr))
+
+
+def answer(**fields):
+    r = {"input": "src/a", "decision": "allow", "path": "/w/src/a", "root": "/w", "rel": "src/a"}
+    return json.dumps({**r, **fields}).encode() + b"\n"
+
+
+class UnusableAnswers(unittest.TestCase):
+    POLICY = dict(allow=["/w"], deny=["/w/.git"])
+
+    def test_each_refuses_before_anything_is_opened(self):
+        good = answer()
+        for code, out in ((0, answer(input="src/other")), (1, good), (3, good), (-11, good),
+                          # A root that is not one of the allowed roots, or no usable rel.
+                          (0, answer(root="/", rel="etc/passwd", path="/etc/passwd")),
+                          (0, answer(root="/w/src", rel="a")), (0, answer(rel=None)),
+                          (0, b"not json\n"), (0, b"[]\n"), (0, b"{}\n"), (0, answer(decision="maybe")),
+                          (0, b""), (0, good + good), (0, good[:-1]), (0, good[:-3] + b'\xc3\xa9"}\n')):
+            with self.subTest(code=code, out=out), pathfence_says(code, out):
+                self.assertEqual(safe_open.check("src/a", **self.POLICY)["decision"], "reject")
+                with mock.patch.object(safe_open.os, "open") as opened, self.assertRaises(safe_open.Refused):
+                    safe_open.safe_open("src/a", **self.POLICY)
+                opened.assert_not_called()
+
+    def test_a_good_answer_is_used(self):
+        with pathfence_says(0, answer()):
+            self.assertEqual(safe_open.check("src/a", **self.POLICY)["rel"], "src/a")
+
+    def test_a_usage_error_refuses_and_says_why(self):
+        with pathfence_says(2, b"", b"not a canonical absolute directory: /w/\n"):
+            r = safe_open.check("src/a", allow=["/w/"])
+        self.assertEqual((r["decision"], r["reason"]), ("reject", "pathfence: not a canonical absolute directory: /w/"))
+        # And with the real binary.
+        self.assertEqual(safe_open.check("src/a", allow=["/w/"])["decision"], "reject")
+
+    def test_a_timeout_is_set_and_refuses(self):
+        with mock.patch.object(safe_open.subprocess, "run",
+                               side_effect=subprocess.TimeoutExpired("pathfence", 1)) as run:
+            self.assertEqual(safe_open.check("src/a", **self.POLICY)["decision"], "reject")
+        self.assertEqual(run.call_args.kwargs["timeout"], safe_open.TIMEOUT)
+
+    def test_a_missing_binary_or_input_it_cannot_take_refuses(self):
+        with mock.patch.object(safe_open, "PATHFENCE", os.path.join(ROOT, "no-such-binary")):
+            self.assertEqual(safe_open.check("src/a", **self.POLICY)["decision"], "reject")
+        for bad in ("src/a\x00b", None):
+            with self.subTest(path=repr(bad)):
+                self.assertEqual(safe_open.check(bad, **self.POLICY)["decision"], "reject")
+
+    def test_a_single_string_policy_is_an_error(self):
+        with self.assertRaises(TypeError):
+            safe_open.check("src/a", allow="/w")
 
 
 if __name__ == "__main__":

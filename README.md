@@ -145,7 +145,10 @@ stdin, the conversion between `String` and `List Char`, JSON output and exit cod
 
     This is agreement on a tested domain, not a proof that the rules are the kernel's. With
     symlinks, the two differ by design; see below.
-  * the safe-open example against symlinks into a denied root and out of the workspace.
+  * the safe-open example against symlinks into a denied root and out of the workspace, and
+    against unusable answers from the binary (simulated by replacing `subprocess.run`): an answer
+    for another path, an exit status that disagrees with the decision, a `root` that is not an
+    allowed root, malformed output. Each refuses before anything is opened.
 * `tests/mutants.py` checks the tests themselves. It rebuilds the CLI with eleven plausible bugs and
   requires each one to make the suite fail. The bugs include the CVE-style string prefix, an
   off-by-one in the beneath rule, an ignored deny root, accepting the empty input, and a wrong
@@ -220,7 +223,9 @@ int fd = syscall(SYS_openat2, rootfd, rel, &how, sizeof how);
 Opening the returned `path` with a plain `open()` follows symlinks and defeats the check.
 
 [`examples/safe_open.py`](examples/safe_open.py) does both steps in Python (`safe_open(path,
-allow=…, deny=…)` returns a file descriptor, or raises). Its test,
+allow=…, deny=…)` returns a file descriptor, or raises). It uses PathFence's answer only if it is
+one JSON object for exactly that path, the exit status agrees with the decision, and `root` is one
+of the allowed roots as given; otherwise, and on a timeout or a missing binary, it refuses. Its test,
 [`tests/test_safe_open.py`](tests/test_safe_open.py), sets up a workspace with a denied `.git`, a
 symlink `cfg -> .git` and a symlink `out -> /etc`. The lexical check allows `cfg/config` and
 `out/passwd`, and the confined open refuses both with `ELOOP`.
