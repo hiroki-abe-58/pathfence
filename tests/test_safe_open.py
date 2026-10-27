@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from common import BIN, ROOT
@@ -92,6 +93,8 @@ class UnusableAnswers(unittest.TestCase):
                           # A root that is not one of the allowed roots, or no usable rel.
                           (0, answer(root="/", rel="etc/passwd", path="/etc/passwd")),
                           (0, answer(root="/w/src", rel="a")), (0, answer(rel=None)),
+                          # A rel that does not name the reported path (it is what gets opened).
+                          (0, answer(rel=".git/config")),
                           (0, b"not json\n"), (0, b"[]\n"), (0, b"{}\n"), (0, answer(decision="maybe")),
                           (0, b""), (0, good + good), (0, good[:-1]), (0, good[:-3] + b'\xc3\xa9"}\n')):
             with self.subTest(code=code, out=out), pathfence_says(code, out):
@@ -103,6 +106,12 @@ class UnusableAnswers(unittest.TestCase):
     def test_a_good_answer_is_used(self):
         with pathfence_says(0, answer()):
             self.assertEqual(safe_open.check("src/a", **self.POLICY)["rel"], "src/a")
+        # os.PathLike paths and roots work as their strings.
+        with pathfence_says(0, answer()):
+            self.assertEqual(safe_open.check(Path("src/a"), allow=[Path("/w")])["decision"], "allow")
+        # The root itself is `rel` ".".
+        with pathfence_says(0, answer(input=".", path="/w", rel=".")):
+            self.assertEqual(safe_open.check(".", **self.POLICY)["decision"], "allow")
 
     def test_a_usage_error_refuses_and_says_why(self):
         with pathfence_says(2, b"", b"not a canonical absolute directory: /w/\n"):
@@ -127,6 +136,8 @@ class UnusableAnswers(unittest.TestCase):
     def test_a_single_string_policy_is_an_error(self):
         with self.assertRaises(TypeError):
             safe_open.check("src/a", allow="/w")
+        with self.assertRaises(TypeError):
+            safe_open.check("src/a", allow=[b"/w"])
 
 
 if __name__ == "__main__":

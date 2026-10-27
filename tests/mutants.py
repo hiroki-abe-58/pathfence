@@ -58,11 +58,11 @@ BASE = {
 
 MUTANTS = {
     "M0 control (unmutated)": {},
-    "M1 `..` allowed at the base": {"@WALKCOND@": "k == 0 || longerThan (k - 1) st"},
+    "M1 `..` allowed at the base": {"@WALKCOND@": "k == 0 || longerThan (k - 1) st"},  # k ≤ st.length
     "M2 no beneath rule": {"@BASEK@": "0"},
     "M3 string-prefix containment (CVE style)": {"@INSIDE@": "(render a).isPrefixOf (render p)"},
     "M4 deny roots ignored": {"@DENYW@": "false"},
-    "M5 `..` refused one level too early": {"@WALKCOND@": "longerThan (k + 1) st"},
+    "M5 `..` refused one level too early": {"@WALKCOND@": "longerThan (k + 1) st"},  # k + 1 < st.length
     "M6 deny only on an exact match": {"@DENYW@": "d == p"},
     "M7 absolute `..` ignored": {"@ABSWALK@": "walkL [] ((split s.tail).filter (· ≠ dotdot))"},
     "M8 empty input accepted": {"@EMPTY@": "False"},

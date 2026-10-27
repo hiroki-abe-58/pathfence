@@ -43,7 +43,11 @@ def check(path, allow, deny=(), base=None):
     for name, value in (("allow", allow), ("deny", deny)):
         if isinstance(value, (str, bytes)):
             raise TypeError(f"{name} must be a list of strings, not a single string")
-    allow, deny = list(allow), list(deny)
+    allow, deny = [os.fspath(a) for a in allow], [os.fspath(d) for d in deny]
+    if not all(isinstance(x, str) for x in allow + deny):
+        raise TypeError("allow and deny must hold str or os.PathLike paths")
+    if isinstance(path, os.PathLike):
+        path = os.fspath(path)
     args = [PATHFENCE, "check"]
     for a in allow:
         args += ["--allow", a]
@@ -75,6 +79,9 @@ def check(path, allow, deny=(), base=None):
     # The file is opened beneath `root`, so a wrong `root` (say `/`) would open a file outside the roots.
     if r["decision"] == "allow" and (r.get("root") not in allow or not isinstance(r.get("rel"), str)):
         return {"decision": "reject", "reason": "pathfence named a root that is not an allowed root"}
+    # `rel` is what gets opened, so it must name the reported `path` (`.` is the root itself).
+    if r["decision"] == "allow" and r.get("path") != (r["root"] if r["rel"] == "." else r["root"] + "/" + r["rel"]):
+        return {"decision": "reject", "reason": "pathfence's root and rel do not name its path"}
     return r
 
 
