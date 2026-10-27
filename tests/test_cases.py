@@ -1,4 +1,5 @@
 """Fixed cases, including inputs in the style of published path-confinement bugs (CWE-22)."""
+import json
 import subprocess
 import unittest
 
@@ -124,6 +125,15 @@ class FixedCases(unittest.TestCase):
         self.assertEqual(run_raw(["check", "--allow", "/w"])[0], 2)
         self.assertEqual(run_raw(["check", "--allow", "/w", "--stdin"], b"")[0], 2)
         self.assertEqual(run_raw(["check", "--allow", "/w", "--"])[0], 2)
+
+    def test_going_down_and_back_up_takes_linear_time(self):
+        # 1 MB: 200,000 levels down, then 200,000 `..`. When each `..` measured the whole stack, this
+        # took 42 s on the machine in the README's Performance section; it takes 0.1 s. The limit
+        # leaves a wide margin for slower machines.
+        n = 200_000
+        p = subprocess.run([BIN, "check", "--allow", "/w", "--stdin"], input=("a/" * n + "../" * n + "x\n").encode(),
+                           capture_output=True, timeout=10, check=False)
+        self.assertEqual((p.returncode, json.loads(p.stdout)["path"]), (0, "/w/x"))
 
 
 if __name__ == "__main__":

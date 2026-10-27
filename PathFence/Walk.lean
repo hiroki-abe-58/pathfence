@@ -31,11 +31,24 @@ def walkL (st : List Seg) : List Seg → List Seg
   | [] => st
   | c :: cs => walkL (stepL st c) cs
 
+/-- Whether the stack has more than `k` entries, that is `k < st.length` (`longerThan_iff`). It
+looks at no more than `k + 1` entries, so a `..` costs time in the depth of the base, not of the
+stack, and the walk takes time linear in its input for a given base. -/
+def longerThan : Nat → List Seg → Bool
+  | _, [] => false
+  | 0, _ :: _ => true
+  | k + 1, _ :: st => longerThan k st
+
+@[simp] theorem longerThan_iff (k : Nat) (st : List Seg) : longerThan k st = true ↔ k < st.length := by
+  induction st generalizing k with
+  | nil => simp [longerThan]
+  | cons x st ih => cases k <;> simp [longerThan, ih]
+
 /-- The beneath walk: like `walkL`, but `..` at depth `k` or less fails. -/
 def walkB (k : Nat) (st : List Seg) : List Seg → Option (List Seg)
   | [] => some st
   | c :: cs =>
-    if c = dotdot then (if k < st.length then walkB k st.tail cs else none)
+    if c = dotdot then (if longerThan k st then walkB k st.tail cs else none)
     else walkB k (stepL st c) cs
 
 /-- Every `..` in `cs` is taken strictly above depth `k`: at the point where the lexical walk from

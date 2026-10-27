@@ -42,6 +42,8 @@ def main():
     run("one path of 100,000 segments", policy + ["--stdin"], ("/".join(["a"] * 100_000) + "\n").encode())
     run("one 1 MB name", policy + ["--stdin"], ("x" * 1_000_000 + "\n").encode())
     run("one path of 50,000 `a/..` pairs", policy + ["--stdin"], ("a/.." * 50_000 + "\n").replace("..a", "../a").encode())
+    run("one path 100,000 levels down and back up", policy + ["--stdin"],
+        ("a/" * 100_000 + "../" * 100_000 + "x\n").encode())
 
 
 if __name__ == "__main__":

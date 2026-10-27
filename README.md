@@ -74,7 +74,7 @@ The table lists the 25 published theorems. Their statements are pinned in
   constructors of inductive types.
 
 The audit fails if a theorem is missing or renamed, if its statement changes, or if any of those
-definitions changes. The library's modules hold 138 theorem declarations in all, counting
+definitions changes. The library's modules hold 147 theorem declarations in all, counting
 helper lemmas and the equation lemmas Lean generates. The audit checks the axioms of every
 declaration.
 
@@ -131,7 +131,8 @@ stdin, the conversion between `String` and `List Char`, JSON output and exit cod
   the tests.
 * `tests/` (Python, standard library only) runs the built CLI against:
   * fixed cases, including the CVE-style inputs, invalid UTF-8, option-like paths and
-    non-canonical roots;
+    non-canonical roots, and a 1 MB path that goes 200,000 levels down and back up, which must be
+    checked within 10 seconds (it takes 0.1 s; see [Performance](#performance));
   * a separate Python implementation of the rules above, on 7500 random inputs over five policies (one with overlapping roots),
     with root names and near misses (`w`, `wx`, `w.`) among the pieces. It follows the same rules,
     so it catches implementation mistakes, not mistakes in the rules;
@@ -247,9 +248,13 @@ every component), or make sure nobody can create symlinks inside the roots.
 | 100,000 paths on stdin (1.9 MB) | 0.34 s | 62 MiB |
 | one path of 100,000 segments | 0.04 s | 63 MiB |
 | one 1 MB name | 0.16 s | 141 MiB |
+| one path 100,000 levels down and back up (0.5 MB) | 0.04 s | 64 MiB |
 
-Memory grows with the input: paths are lists of characters, and stdin is read whole. Expect roughly
-30 to 140 times the input size, so split very large batches.
+For a given policy, time grows linearly with the input. Memory grows with it too: paths are lists of characters, and
+stdin is read whole. Expect roughly 30 to 140 times the input size (one 16 MB name took 2.7 s and
+1.8 GiB), so split very large batches. These are measurements: the theorems say nothing about time
+or memory. A process that is killed, for example when memory runs out, exits with a status other
+than 0, 1 or 2, and its output can stop part-way; treat that as a failure, not as an answer.
 
 ## What it does not cover
 

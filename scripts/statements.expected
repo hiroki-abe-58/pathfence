@@ -3,45 +3,45 @@ DEPSHA PathFence.join_split 908c8a642dcd588ea16d0ea52c92d0b5ac9d5f7219215376ff09
 STATEMENT PathFence.split_join : ∀ (ps : List PathFence.Seg), ps ≠ [] → (∀ (p : PathFence.Seg), p ∈ ps → ¬'/' ∈ p) → PathFence.split (PathFence.join ps) = ps
 DEPSHA PathFence.split_join 141937f4edeb8fcb1c1eb8efe7f91525dc692a46380e411213aeded2c08da58d
 STATEMENT PathFence.walkB_spec : ∀ (k : Nat) (st cs o : List PathFence.Seg), PathFence.walkB k st cs = some o ↔ o = PathFence.walkL st cs ∧ PathFence.PopsAbove k st cs
-DEPSHA PathFence.walkB_spec 2bfee5fb5030992585dafe7e57f7ae0a07885541800e074662360e62908d382c
+DEPSHA PathFence.walkB_spec 629f7369d9cb64943c2bccf67f1e59f4d09ef64dfaf2063c3c5c7393170879f3
 STATEMENT PathFence.walkB_keeps_base : ∀ (bot cs e o : List PathFence.Seg), PathFence.walkB bot.length (e ++ bot) cs = some o → ∃ e', o = e' ++ bot
-DEPSHA PathFence.walkB_keeps_base 1f929b63f621b5a5d738287e080fee6c4841a9926689f8aed32ac32b3197ea09
+DEPSHA PathFence.walkB_keeps_base 21232eb1b11257f2a32996687dedc24e6192f97f11aba0bd98f0278f5adb1926
 STATEMENT PathFence.walkL_of_valid : ∀ (st p : List PathFence.Seg), (∀ (s : PathFence.Seg), s ∈ p → s.Valid) → PathFence.walkL st p = p.reverse ++ st
 DEPSHA PathFence.walkL_of_valid 8a26b339fb87f8d9999a9b50d74351cb8b3fbf68414bf1834427f8eaf30813e9
 STATEMENT PathFence.resolve_empty : ∀ (base : PathFence.Path), PathFence.resolve base [] = Except.error PathFence.Reason.empty
-DEPSHA PathFence.resolve_empty d4c33d0bfe9fde07675b9d675431582fa1ad29fe5e5506d7e01bbe064960296c
+DEPSHA PathFence.resolve_empty 49751fe43fc03e736f3c8d351c0aed52670a9fa8e2c14235e34df29234aa4207
 STATEMENT PathFence.resolve_nul : ∀ (base : PathFence.Path) (s : List Char), '\x00' ∈ s → PathFence.resolve base s = Except.error PathFence.Reason.nul
-DEPSHA PathFence.resolve_nul 69126bd49b30f4182b7b808bd272d51dd66cc8ef1aeb274208ef682ef72d772b
+DEPSHA PathFence.resolve_nul ba90214650ca35ec6b3558c805dc6146f57f68f93e6281b10ebf8439c347074f
 STATEMENT PathFence.resolve_abs : ∀ (base : PathFence.Path) (s : List Char), ¬'\x00' ∈ s → PathFence.isAbs s = true → PathFence.resolve base s = Except.ok (PathFence.walkL [] (PathFence.split s.tail)).reverse
-DEPSHA PathFence.resolve_abs fd83a5ebd384099e48f524a500e2fc20d0b6d9d673e0f7a8854f81caf311d787
+DEPSHA PathFence.resolve_abs 0c0c9b47eaa77effe06a77379e70a430b9b05ed585ba705c93a550b6100f9a51
 STATEMENT PathFence.resolve_rel_spec : ∀ (base : PathFence.Path) (s : List Char) (p : PathFence.Path), s ≠ [] → ¬'\x00' ∈ s → PathFence.isAbs s = false → (PathFence.resolve base s = Except.ok p ↔ p = (PathFence.walkL (List.reverse base) (PathFence.split s)).reverse ∧ PathFence.PopsAbove (List.length base) (List.reverse base) (PathFence.split s))
-DEPSHA PathFence.resolve_rel_spec 5dec0765d8199fcf98f173239a9dea5c0ad08706eebc55bd7a01b6e311730f78
+DEPSHA PathFence.resolve_rel_spec a69722182c921a9373cbbf68b414ff82534d6a11cd2d5cddee8760444f638c20
 STATEMENT PathFence.resolve_rel_within : ∀ (base : PathFence.Path) (s : List Char) (p : PathFence.Path), PathFence.isAbs s = false → PathFence.resolve base s = Except.ok p → base <+: p
-DEPSHA PathFence.resolve_rel_within 272e66ebfd2a0de8326a2833fc579e6c4876fba1ccb15d7bfa056a8f8874b667
+DEPSHA PathFence.resolve_rel_within 9a1bc73e954c03f281e61d3e3813f688fb3078e4b05718d15658409e0167b6b0
 STATEMENT PathFence.resolve_valid : ∀ (base : PathFence.Path) (s : List Char) (p : PathFence.Path), (∀ (x : PathFence.Seg), x ∈ base → x.Valid) → PathFence.resolve base s = Except.ok p → ∀ (x : PathFence.Seg), x ∈ p → x.Valid
-DEPSHA PathFence.resolve_valid efd08b18ff17091b5c5d39cbf781300dc68ea849d8c645c4e45e66d0f70650bf
+DEPSHA PathFence.resolve_valid 3d6abdcf27fa68f2d8e4b6333044a96d91026e71daa7c1e400dad7115a6eec2c
 STATEMENT PathFence.resolve_render : ∀ (base p : PathFence.Path), (∀ (x : PathFence.Seg), x ∈ p → x.Valid) → PathFence.resolve base (PathFence.render p) = Except.ok p
-DEPSHA PathFence.resolve_render 42f0535b7fc4a8401d269a2c0c0ea2c1d7f15d650880f91d07a50e8cbf2068b9
+DEPSHA PathFence.resolve_render 38e5471d8220be3165f2db2c1610ff6ac61fbd2d278b646790181ddc66ed5922
 STATEMENT PathFence.within_iff_render : ∀ (r p : PathFence.Path), r ≠ [] → (∀ (x : PathFence.Seg), x ∈ r → x.Valid) → (∀ (x : PathFence.Seg), x ∈ p → x.Valid) → (r <+: p ↔ PathFence.render p = PathFence.render r ∨ PathFence.render r ++ ['/'] <+: PathFence.render p)
 DEPSHA PathFence.within_iff_render 472c225668a334e9de4697faadf6a8bf2e9be960b0713fc374532abcc28c3def
 STATEMENT PathFence.check_allow_iff : ∀ (pol : PathFence.Policy) (s : List Char) (p : PathFence.Path), pol.check s = PathFence.Decision.allow p ↔ PathFence.resolve pol.base s = Except.ok p ∧ (∃ a, a ∈ pol.allow ∧ a <+: p) ∧ ∀ (d : PathFence.Path), d ∈ pol.deny → ¬d <+: p
-DEPSHA PathFence.check_allow_iff 9f4a2d699ac1c75c099c3d81d0b6b8af34c2e946ba93b3afe946d3417c47effb
+DEPSHA PathFence.check_allow_iff 445da72e3ae8f8178d8122148bd9b8a02a69126bf0d11b0d94cfae24e53d8eae
 STATEMENT PathFence.check_deny_iff : ∀ (pol : PathFence.Policy) (s : List Char) (p : PathFence.Path), pol.check s = PathFence.Decision.deny p ↔ PathFence.resolve pol.base s = Except.ok p ∧ ¬((∃ a, a ∈ pol.allow ∧ a <+: p) ∧ ∀ (d : PathFence.Path), d ∈ pol.deny → ¬d <+: p)
-DEPSHA PathFence.check_deny_iff ba86a9419e41cd575a46ea906389e8832550a5e5f08e862fa46e0a37a85f14f2
+DEPSHA PathFence.check_deny_iff 22a190b1ed481383effdd60055edb99d2cd56aa5ffb77e9a5d39deb586d49b46
 STATEMENT PathFence.check_reject_iff : ∀ (pol : PathFence.Policy) (s : List Char) (r : PathFence.Reason), pol.check s = PathFence.Decision.reject r ↔ PathFence.resolve pol.base s = Except.error r
-DEPSHA PathFence.check_reject_iff 09868c4f2ec61e32d50b2b1621587bb4627c484c2b1f3fed3bfce09be41850ce
+DEPSHA PathFence.check_reject_iff 09bed449dbe6973e5c80f7496fcc7a17567ac9e78f68ebbf0836808082869fc5
 STATEMENT PathFence.check_allow_rel_within_base : ∀ (pol : PathFence.Policy) (s : List Char) (p : PathFence.Path), PathFence.isAbs s = false → pol.check s = PathFence.Decision.allow p → pol.base <+: p
-DEPSHA PathFence.check_allow_rel_within_base 851ada13f9ab53a13be86755c1ab404fcc01df3c1c0168b70cb0f99f6f940582
+DEPSHA PathFence.check_allow_rel_within_base ab483690aca078e70694ebaaf8632d7d73764c16920c0ae5684172f2f237abac
 STATEMENT PathFence.check_allow_of_add_deny : ∀ (pol : PathFence.Policy) (d : PathFence.Path) (s : List Char) (p : PathFence.Path), { base := pol.base, allow := pol.allow, deny := d :: pol.deny }.check s = PathFence.Decision.allow p → pol.check s = PathFence.Decision.allow p
-DEPSHA PathFence.check_allow_of_add_deny 0d63e06b720d1b5726b07e7f900f0eaefed26a03b986f35c47e9fe6d941d2ae2
+DEPSHA PathFence.check_allow_of_add_deny 48e4b9633a67666ec3fc8d01c034f85131f7975363726bb5884ecb164485c145
 STATEMENT PathFence.check_allow_add_allow : ∀ (pol : PathFence.Policy) (a : PathFence.Path) (s : List Char) (p : PathFence.Path), pol.check s = PathFence.Decision.allow p → { base := pol.base, allow := a :: pol.allow, deny := pol.deny }.check s = PathFence.Decision.allow p
-DEPSHA PathFence.check_allow_add_allow 10161cbf8c241cfd17efadf720196284c6d8860428cfb24ce18610a7074b1269
+DEPSHA PathFence.check_allow_add_allow 87e84b08b509774a0e3a2f2b181985e7b5e85107a25016729c9270a7b4c539f7
 STATEMENT PathFence.confine_allow_iff : ∀ (root : PathFence.Path) (s : List Char) (p : PathFence.Path), PathFence.confine root s = PathFence.Decision.allow p ↔ PathFence.resolve root s = Except.ok p ∧ root <+: p
-DEPSHA PathFence.confine_allow_iff a904335dcf3032e64846d01759cc48089c36d9a64567f6eb9b92b21c0e560004
+DEPSHA PathFence.confine_allow_iff 641617eeea0e509b6a3cf8a0b737f218a423a4108aa817657091f2c3f472a119
 STATEMENT PathFence.allowedUnder_spec : ∀ (pol : PathFence.Policy) (p r rel : PathFence.Path), pol.allowedUnder p = some (r, rel) → r ∈ pol.allow ∧ r ++ rel = p
 DEPSHA PathFence.allowedUnder_spec d788204e3d2e25c1900a9d634ab96ae2e0c866354f33bedae206b71179c5c042
 STATEMENT PathFence.allowedUnder_of_allow : ∀ (pol : PathFence.Policy) (s : List Char) (p : PathFence.Path), pol.check s = PathFence.Decision.allow p → ∃ r rel, pol.allowedUnder p = some (r, rel)
-DEPSHA PathFence.allowedUnder_of_allow 0cb717c4576541bae3b8518b5830a7565ab271dfc0e3ad9e0bdbddfdd7d650ab
+DEPSHA PathFence.allowedUnder_of_allow 9ce00b504ec102f2b5c2b27b6d2d87cc4de01447a2c9c46c45951dcb043b104d
 STATEMENT PathFence.parseRoot_valid : ∀ (s : String) (p : PathFence.Path), PathFence.parseRoot s = some p → ∀ (x : PathFence.Seg), x ∈ p → x.Valid
 DEPSHA PathFence.parseRoot_valid 940d0c3993ee88783f0120b0c681592a9f0b1703021ef98f6cf1d392b4abf923
 STATEMENT PathFence.parseRoot_render : ∀ (s : String) (p : PathFence.Path), PathFence.parseRoot s = some p → PathFence.render p = s.toList
