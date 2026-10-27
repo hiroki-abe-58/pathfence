@@ -1,7 +1,7 @@
 """Fixed cases, including inputs in the style of published path-confinement bugs (CWE-22)."""
 import unittest
 
-from common import as_pair, model_check, run_check
+from common import as_pair, model_check, run_check, run_raw
 
 CASES = [
     # (allow roots, deny roots, input, expected decision, expected path or reason)
@@ -54,6 +54,22 @@ class FixedCases(unittest.TestCase):
         status, out = run_check(["a\x00b", "ok"], ["/w"], stdin=True)
         self.assertEqual([as_pair(r) for r in out], [("reject", "nul"), ("allow", "/w/ok")])
         self.assertEqual(status, 1)
+
+    def test_encoding(self):
+        # Bytes that are not UTF-8 are rejected, not checked with replacement characters.
+        status, out = run_raw(["check", "--allow", "/w", "--stdin"], b"ok\nx\xffy\n\xe2\x82\xac\nx\xc3/../../etc")
+        self.assertEqual([as_pair(r) for r in out],
+                         [("allow", "/w/ok"), ("reject", "encoding"), ("allow", "/w/€"),
+                          ("reject", "encoding")])
+        self.assertEqual([r.get("input_hex") for r in out], [None, "78ff79", None, "78c32f2e2e2f2e2e2f657463"])
+        self.assertEqual(status, 1)
+        # On the command line the program only sees U+FFFD, so any U+FFFD is rejected there;
+        # the same name passes on stdin, where it is known to be genuine.
+        status, out = run_raw(["check", "--allow", "/w", "--", "x\udcffy", "x�y", "ok"])
+        self.assertEqual([as_pair(r) for r in out],
+                         [("reject", "encoding"), ("reject", "encoding"), ("allow", "/w/ok")])
+        self.assertEqual(run_check(["x�y"], ["/w"], stdin=True)[1][0]["decision"], "allow")
+        self.assertEqual(run_raw(["check", "--allow", "/w\udcff", "--", "a"])[0], 2)
 
     def test_separate_base(self):
         status, out = run_check(["out.txt", "/tmp/scratch/x", "/tmp/scratchpad/x"],

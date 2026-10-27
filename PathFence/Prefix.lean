@@ -69,7 +69,7 @@ theorem within_iff_render (r p : Path) (hr : r ≠ []) (hrv : ∀ x ∈ r, Seg.V
     · by_cases hp : p = []
       · subst hp
         rw [hrr] at h
-        simp only [render, if_pos, List.cons.injEq, true_and] at h
+        simp only [render, ite_eq_left, List.cons.injEq, true_and] at h
         exact absurd h.symm (join_ne_nil r hr hrv)
       · rw [show render p = '/' :: join p by simp [render, hp], hrr] at h
         have hj : join p = join r := by injection h

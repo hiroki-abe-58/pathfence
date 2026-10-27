@@ -165,7 +165,7 @@ theorem walkL_of_valid (st : List Seg) (p : List Seg) (hp : ∀ s ∈ p, Seg.Val
   | cons x p ih =>
     have hx := hp x (by simp)
     have h1 : ¬ (x = [] ∨ x = ['.']) := fun h => h.elim hx.1 hx.2.1
-    simp only [walkL, stepL, h1, if_false, hx.2.2.1]
+    simp only [walkL, stepL, h1, ite_false, hx.2.2.1]
     rw [ih (x :: st) (fun s hs => hp s (by simp [hs]))]
     simp
 

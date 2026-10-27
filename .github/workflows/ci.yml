@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: leanprover/lean-action@24581d74d674803a25a81b10b059c5c0cdd344c6 # v1.6.2
+        with:
+          # Replay every PathFence module through the kernel's own checker.
+          leanchecker: true
+          leanchecker-args: PathFence
+      - name: Proof audit
+        run: ./scripts/audit.sh
+      - name: CLI tests (fixed cases, Python model, normpath, openat2)
+        run: python3 -m unittest discover -s tests -v

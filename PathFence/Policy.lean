@@ -53,7 +53,7 @@ theorem check_allow_iff (pol : Policy) (s : List Char) (p : Path) :
   | ok q =>
     simp only [Except.ok.injEq]
     by_cases hq : pol.allow.any (fun a => a.isPrefixOf q) && !pol.deny.any (fun d => d.isPrefixOf q)
-    · rw [if_pos hq]
+    · rw [ite_eq_left hq]
       simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, List.any_eq_true,
         List.isPrefixOf_iff_prefix, List.any_eq_false] at hq
       simp only [Decision.allow.injEq]
@@ -61,7 +61,7 @@ theorem check_allow_iff (pol : Policy) (s : List Char) (p : Path) :
       · rintro rfl
         exact ⟨rfl, hq.1, fun d hd h => hq.2 d hd (by simpa [List.isPrefixOf_iff_prefix] using h)⟩
       · rintro ⟨rfl, -, -⟩; rfl
-    · rw [if_neg hq]
+    · rw [ite_eq_right hq]
       simp only [reduceCtorEq, false_iff]
       rintro ⟨rfl, ⟨a, ha, hap⟩, hd⟩
       apply hq

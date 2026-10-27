@@ -59,7 +59,7 @@ theorem resolve_abs (base : Path) (s : List Char) (h0 : '\x00' ∉ s) (ha : isAb
 theorem resolve_rel_spec (base : Path) (s : List Char) (p : Path) (h0 : '\x00' ∉ s) (ha : isAbs s = false) :
     resolve base s = .ok p ↔
       p = (walkL base.reverse (split s)).reverse ∧ PopsAbove base.length base.reverse (split s) := by
-  simp only [resolve, h0, ha, if_false, Bool.false_eq_true]
+  simp only [resolve, h0, ha, ite_false, Bool.false_eq_true]
   constructor
   · intro h
     split at h
@@ -78,7 +78,7 @@ theorem resolve_rel_within (base : Path) (s : List Char) (p : Path) (ha : isAbs 
     (h : resolve base s = .ok p) : base <+: p := by
   by_cases h0 : '\x00' ∈ s
   · simp [resolve_nul base s h0] at h
-  · simp only [resolve, h0, ha, if_false, Bool.false_eq_true] at h
+  · simp only [resolve, h0, ha, ite_false, Bool.false_eq_true] at h
     split at h
     · rename_i o ho
       have hp : p = o.reverse := by injection h with h; exact h.symm

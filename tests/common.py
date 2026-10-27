@@ -21,12 +21,14 @@ def run_check(paths, allow, deny=(), base=None, stdin=False):
     if base is not None:
         args += ["--base", base]
     if stdin:
-        proc = subprocess.run(args + ["--stdin"], input="".join(p + "\n" for p in paths).encode(),
-                              capture_output=True, check=False)
-    else:
-        proc = subprocess.run(args + ["--"] + list(paths), capture_output=True, check=False)
-    lines = [json.loads(l) for l in proc.stdout.decode().splitlines() if l]
-    return proc.returncode, lines
+        return run_raw(args[1:] + ["--stdin"], "".join(p + "\n" for p in paths).encode())
+    return run_raw(args[1:] + ["--"] + list(paths))
+
+
+def run_raw(args, data=None):
+    """Run `pathfence` with `args` (str, or bytes via surrogateescape) and stdin bytes `data`."""
+    proc = subprocess.run([BIN] + list(args), input=data, capture_output=True, check=False)
+    return proc.returncode, [json.loads(l) for l in proc.stdout.decode().splitlines() if l]
 
 
 # ---- the reference model -------------------------------------------------------------------------
