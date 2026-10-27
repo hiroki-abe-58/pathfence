@@ -9,7 +9,9 @@ import Lean
   modules may be imported, so no other code can reach the library.
 * `IMPLBY <name> <impl>` and `EXTERN <name>` for every PathFence declaration whose compiled code is
   replaced (`implemented_by`, `extern`). There must be none: the binary must run the code the
-  theorems are about. -/
+  theorems are about.
+* `STATEMENT <name> : <type>` for every theorem, pretty-printed on one line, so that the published
+  statements can be compared with `scripts/statements.expected`. -/
 
 open Lean Elab Command
 
@@ -33,6 +35,11 @@ run_cmd do
       | _ => "def"
     let axs ← collectAxioms name
     lines := lines.push s!"AXIOMS {kind} {name}: {axs.toList}"
+    if kind == "theorem" then
+      let fmt ← liftTermElabM (Meta.ppExpr ci.type)
+      let raw := (fmt.pretty 100000).replace "\n" " "
+      let stmt := " ".intercalate ((raw.splitOn " ").filter (· ≠ ""))
+      lines := lines.push s!"STATEMENT {name} : {stmt}"
     if let some impl := Compiler.getImplementedBy? env name then
       lines := lines.push s!"IMPLBY {name} {impl}"
     if isExtern env name then

@@ -66,9 +66,11 @@ All theorems are in [`PathFence/`](PathFence), checked by Lean v4.35.0, with no 
 Lean's standard axioms (`propext`, `Classical.choice`, `Quot.sound`; see
 [`scripts/audit.sh`](scripts/audit.sh)).
 
-The table lists the 25 published statements, which `scripts/audit.sh` requires by name. The
-library's environment holds 138 theorem declarations in all, counting helper lemmas and the
-equation lemmas Lean generates. The audit checks the axioms of every one of them.
+The table lists the 25 published theorems. Their exact statements are pinned in
+[`scripts/statements.expected`](scripts/statements.expected), and the audit fails if one is
+missing, renamed or weakened. The library's modules hold 138 theorem declarations in all, counting
+helper lemmas and the equation lemmas Lean generates. The audit checks the axioms of every
+declaration.
 
 | Theorem | Statement |
 | --- | --- |
@@ -100,17 +102,22 @@ stdin, the conversion between `String` and `List Char`, JSON output and exit cod
 
 * `lake build` checks the proofs and runs the `#guard` examples.
 * `scripts/audit.sh`:
+  * before running Lake, checks `lakefile.lean`, `lean-toolchain` and `lake-manifest.json` against
+    pinned SHA-256 hashes (a lakefile is code Lake runs). Any change to the build configuration
+    therefore has to change the audit too, visibly;
   * rejects `sorry`, `admit`, `native_decide`, axioms, `implemented_by`/`extern`, `partial`/`unsafe`,
-    `#eval`/`initialize`, kernel-skipping options and metaprogramming commands in the library
-    source;
-  * checks that `lakefile.lean` builds just the library and the CLI, with no dependencies and no extra
-    compiler options;
+    `#eval`, `#exit`, `initialize`, kernel-skipping options and metaprogramming commands in the
+    library source;
   * checks the compiled environment:
     * the library imports only `Init` and its own modules;
     * no library declaration has its compiled code replaced (`implemented_by`, `extern`);
     * every declaration (the list is generated, not maintained by hand) depends on no axiom outside
       the standard three;
+    * the 25 published statements match `scripts/statements.expected`;
   * replays every module through the kernel's own checker (`leanchecker`).
+
+  In CI, `lake build` runs before the audit, so a malicious build configuration would run before the
+  audit flags it. The audit makes such a change visible; it does not sandbox the build.
 
   It does not check that `Main.lean` calls the library as documented; that is left to review and
   the tests.

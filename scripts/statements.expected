@@ -1,0 +1,25 @@
+STATEMENT PathFence.join_split : ∀ (l : List Char), PathFence.join (PathFence.split l) = l
+STATEMENT PathFence.split_join : ∀ (ps : List PathFence.Seg), ps ≠ [] → (∀ (p : PathFence.Seg), p ∈ ps → ¬'/' ∈ p) → PathFence.split (PathFence.join ps) = ps
+STATEMENT PathFence.walkB_spec : ∀ (k : Nat) (st cs o : List PathFence.Seg), PathFence.walkB k st cs = some o ↔ o = PathFence.walkL st cs ∧ PathFence.PopsAbove k st cs
+STATEMENT PathFence.walkB_keeps_base : ∀ (bot cs e o : List PathFence.Seg), PathFence.walkB bot.length (e ++ bot) cs = some o → ∃ e', o = e' ++ bot
+STATEMENT PathFence.walkL_of_valid : ∀ (st p : List PathFence.Seg), (∀ (s : PathFence.Seg), s ∈ p → s.Valid) → PathFence.walkL st p = p.reverse ++ st
+STATEMENT PathFence.resolve_empty : ∀ (base : PathFence.Path), PathFence.resolve base [] = Except.error PathFence.Reason.empty
+STATEMENT PathFence.resolve_nul : ∀ (base : PathFence.Path) (s : List Char), '\x00' ∈ s → PathFence.resolve base s = Except.error PathFence.Reason.nul
+STATEMENT PathFence.resolve_abs : ∀ (base : PathFence.Path) (s : List Char), ¬'\x00' ∈ s → PathFence.isAbs s = true → PathFence.resolve base s = Except.ok (PathFence.walkL [] (PathFence.split s.tail)).reverse
+STATEMENT PathFence.resolve_rel_spec : ∀ (base : PathFence.Path) (s : List Char) (p : PathFence.Path), s ≠ [] → ¬'\x00' ∈ s → PathFence.isAbs s = false → (PathFence.resolve base s = Except.ok p ↔ p = (PathFence.walkL (List.reverse base) (PathFence.split s)).reverse ∧ PathFence.PopsAbove (List.length base) (List.reverse base) (PathFence.split s))
+STATEMENT PathFence.resolve_rel_within : ∀ (base : PathFence.Path) (s : List Char) (p : PathFence.Path), PathFence.isAbs s = false → PathFence.resolve base s = Except.ok p → base <+: p
+STATEMENT PathFence.resolve_valid : ∀ (base : PathFence.Path) (s : List Char) (p : PathFence.Path), (∀ (x : PathFence.Seg), x ∈ base → x.Valid) → PathFence.resolve base s = Except.ok p → ∀ (x : PathFence.Seg), x ∈ p → x.Valid
+STATEMENT PathFence.resolve_render : ∀ (base p : PathFence.Path), (∀ (x : PathFence.Seg), x ∈ p → x.Valid) → PathFence.resolve base (PathFence.render p) = Except.ok p
+STATEMENT PathFence.within_iff_render : ∀ (r p : PathFence.Path), r ≠ [] → (∀ (x : PathFence.Seg), x ∈ r → x.Valid) → (∀ (x : PathFence.Seg), x ∈ p → x.Valid) → (r <+: p ↔ PathFence.render p = PathFence.render r ∨ PathFence.render r ++ ['/'] <+: PathFence.render p)
+STATEMENT PathFence.check_allow_iff : ∀ (pol : PathFence.Policy) (s : List Char) (p : PathFence.Path), pol.check s = PathFence.Decision.allow p ↔ PathFence.resolve pol.base s = Except.ok p ∧ (∃ a, a ∈ pol.allow ∧ a <+: p) ∧ ∀ (d : PathFence.Path), d ∈ pol.deny → ¬d <+: p
+STATEMENT PathFence.check_deny_iff : ∀ (pol : PathFence.Policy) (s : List Char) (p : PathFence.Path), pol.check s = PathFence.Decision.deny p ↔ PathFence.resolve pol.base s = Except.ok p ∧ ¬((∃ a, a ∈ pol.allow ∧ a <+: p) ∧ ∀ (d : PathFence.Path), d ∈ pol.deny → ¬d <+: p)
+STATEMENT PathFence.check_reject_iff : ∀ (pol : PathFence.Policy) (s : List Char) (r : PathFence.Reason), pol.check s = PathFence.Decision.reject r ↔ PathFence.resolve pol.base s = Except.error r
+STATEMENT PathFence.check_allow_rel_within_base : ∀ (pol : PathFence.Policy) (s : List Char) (p : PathFence.Path), PathFence.isAbs s = false → pol.check s = PathFence.Decision.allow p → pol.base <+: p
+STATEMENT PathFence.check_allow_of_add_deny : ∀ (pol : PathFence.Policy) (d : PathFence.Path) (s : List Char) (p : PathFence.Path), { base := pol.base, allow := pol.allow, deny := d :: pol.deny }.check s = PathFence.Decision.allow p → pol.check s = PathFence.Decision.allow p
+STATEMENT PathFence.check_allow_add_allow : ∀ (pol : PathFence.Policy) (a : PathFence.Path) (s : List Char) (p : PathFence.Path), pol.check s = PathFence.Decision.allow p → { base := pol.base, allow := a :: pol.allow, deny := pol.deny }.check s = PathFence.Decision.allow p
+STATEMENT PathFence.confine_allow_iff : ∀ (root : PathFence.Path) (s : List Char) (p : PathFence.Path), PathFence.confine root s = PathFence.Decision.allow p ↔ PathFence.resolve root s = Except.ok p ∧ root <+: p
+STATEMENT PathFence.allowedUnder_spec : ∀ (pol : PathFence.Policy) (p r rel : PathFence.Path), pol.allowedUnder p = some (r, rel) → r ∈ pol.allow ∧ r ++ rel = p
+STATEMENT PathFence.allowedUnder_of_allow : ∀ (pol : PathFence.Policy) (s : List Char) (p : PathFence.Path), pol.check s = PathFence.Decision.allow p → ∃ r rel, pol.allowedUnder p = some (r, rel)
+STATEMENT PathFence.parseRoot_valid : ∀ (s : String) (p : PathFence.Path), PathFence.parseRoot s = some p → ∀ (x : PathFence.Seg), x ∈ p → x.Valid
+STATEMENT PathFence.parseRoot_render : ∀ (s : String) (p : PathFence.Path), PathFence.parseRoot s = some p → PathFence.render p = s.toList
+STATEMENT PathFence.Policy.make_valid : ∀ (base : String) (allow deny : List String) (pol : PathFence.Policy), PathFence.Policy.make base allow deny = some pol → pol.Valid

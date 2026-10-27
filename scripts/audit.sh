@@ -1,36 +1,56 @@
 #!/usr/bin/env bash
-# Proof audit: no escape hatches in the library, only Lean's standard axioms behind any of its
-# declarations, no other code reaching it, compiled code that is the proven code, and every module
-# accepted by the kernel's own checker.
+# Proof audit: no escape hatches in the library, a pinned build configuration, only Lean's standard
+# axioms behind any of its declarations, no other code reaching it, compiled code that is the proven
+# code, the published theorem statements unchanged, and every module accepted by the kernel's own
+# checker.
 #
 # What this does not check: that Main.lean (the CLI) calls the library as documented. That is
 # ordinary code, covered by review and by the tests.
+#
+#   scripts/audit.sh                     run the audit
+#   scripts/audit.sh --print-statements  print the published statements (to review a change to
+#                                        scripts/statements.expected)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 fail() { echo "audit: $*" >&2; exit 1; }
 
-# 1. Source: no `sorry`/`admit`, `native_decide`, new axioms or opaque constants,
+PUBLISHED="join_split split_join walkB_spec walkB_keeps_base walkL_of_valid resolve_empty resolve_nul
+  resolve_abs resolve_rel_spec resolve_rel_within resolve_valid resolve_render within_iff_render
+  check_allow_iff check_deny_iff check_reject_iff check_allow_rel_within_base check_allow_of_add_deny
+  check_allow_add_allow confine_allow_iff allowedUnder_spec allowedUnder_of_allow parseRoot_valid
+  parseRoot_render Policy.make_valid"
+
+# 1. Build configuration, checked before anything runs Lake (a lakefile is code that Lake executes).
+#    Any change to these files must update the hashes here, in plain sight. Pinning them rules out
+#    extra targets or libraries, another source directory, compiler or linker options, dependencies
+#    and code in the lakefile.
+pin() { [ "$(sha256sum "$1" | cut -d' ' -f1)" = "$2" ] || fail "$1 differs from the pinned version"; }
+pin lakefile.lean d0a322417122730651831e66b40e4d8194c69026160f451943c37100c6fd684b
+pin lean-toolchain ca5f1f601d34c49079e38d7e7041eb0f2a9c227fbc1df0f404820069a052330c
+pin lake-manifest.json 7e75ddb0deb0f4d4f1963a08ef3657a5319feb7f67908bc9936fca79c764c3ac
+[ ! -e lakefile.toml ] || fail "lakefile.toml must not exist"
+
+# 2. Source: no `sorry`/`admit`, `native_decide`, new axioms or opaque constants,
 #    `implemented_by`/`extern`, `partial`/`unsafe` definitions, options that skip kernel checking,
-#    `#eval`/`initialize`, or metaprograms that could change the environment. (`Main.lean` may use
-#    `partial` to read stdin.)
+#    `#eval`/`#exit`/`initialize`, or metaprograms that could change the environment. (`Main.lean` may
+#    use `partial` to read stdin.)
 files=$(find PathFence.lean PathFence -name '*.lean' | sort)
-if grep -nE '\b(sorry|admit|native_decide|axiom|opaque|implemented_by|extern|partial|unsafe|run_tac|run_cmd|run_elab|run_meta|elab|elab_rules|macro|macro_rules|syntax|initialize|builtin_initialize|skipKernelTC)\b|#eval|set_option +debug' \
+if grep -nE '\b(sorry|admit|native_decide|axiom|opaque|implemented_by|extern|partial|unsafe|run_tac|run_cmd|run_elab|run_meta|elab|elab_rules|macro|macro_rules|syntax|initialize|builtin_initialize|skipKernelTC)\b|#eval|#exit|set_option +debug' \
     $files; then
   fail "forbidden keyword in the library"
 fi
 
-# 2. Build configuration: one library and one executable, nothing else compiled into the package,
-#    no dependencies, no extra compiler options.
-if grep -nE '\b(require|leanOptions|moreLeanArgs|moreServerArgs|moreLinkArgs|weakLeanArgs|extern_lib|target|input_file|input_dir|precompileModules|plugins|dynlibs|needs)\b' lakefile.lean; then
-  fail "unexpected build configuration in lakefile.lean"
-fi
-[ "$(grep -cE '^\s*lean_lib\b' lakefile.lean)" = 1 ] && grep -qE '^\s*lean_lib PathFence\s*$' lakefile.lean \
-  || fail "lakefile.lean must declare exactly the library PathFence"
-[ "$(grep -cE '^\s*lean_exe\b' lakefile.lean)" = 1 ] || fail "lakefile.lean must declare exactly one executable"
-
-# 3. Environment: imports, replaced implementations, and axioms of every declaration.
+# 3. Environment: imports, replaced implementations, axioms of every declaration, and the published
+#    statements.
 out=$(lake env lean scripts/Axioms.lean)
+statements() {
+  for t in $PUBLISHED; do
+    grep -F "STATEMENT PathFence.$t : " <<<"$out" || fail "missing theorem PathFence.$t"
+  done
+}
+if [ "${1:-}" = "--print-statements" ]; then statements; exit 0; fi
+
 bad_imports=$(grep '^IMPORT ' <<<"$out" | awk '$3 !~ /^(Init|PathFence)([.]|$)/' || true)
 [ -z "$bad_imports" ] || fail "the library imports other modules: $bad_imports"
 ! grep -E '^(IMPLBY|EXTERN) ' <<<"$out" || fail "compiled code of a library declaration is replaced"
@@ -41,19 +61,16 @@ bad=$(sed -E 's/^AXIOMS [a-z]+ [^ ]+: \[(.*)\]$/\1/' <<<"$lines" | tr ',' '\n' |
   | grep -vxE 'propext|Classical\.choice|Quot\.sound' | sort -u || true)
 [ -z "$bad" ] || fail "non-standard axioms: $bad"
 
-# The published theorems must all be there (a rename would otherwise drop one silently).
-for t in join_split split_join walkB_spec walkB_keeps_base walkL_of_valid resolve_empty resolve_nul \
-    resolve_abs resolve_rel_spec resolve_rel_within resolve_valid resolve_render within_iff_render \
-    check_allow_iff check_deny_iff check_reject_iff check_allow_rel_within_base check_allow_of_add_deny \
-    check_allow_add_allow confine_allow_iff allowedUnder_spec allowedUnder_of_allow parseRoot_valid \
-    parseRoot_render Policy.make_valid; do
-  grep -q "^AXIOMS theorem PathFence\.$t: " <<<"$lines" || fail "missing theorem PathFence.$t"
-done
+# The published theorems must exist with exactly the reviewed statements: a weakened or renamed
+# theorem fails here.
+diff <(statements) scripts/statements.expected >/dev/null \
+  || { diff <(statements) scripts/statements.expected >&2 || true; fail "published statements differ from scripts/statements.expected"; }
 thms=$(grep -c '^AXIOMS theorem ' <<<"$lines")
 decls=$(wc -l <<<"$lines")
 imports=$(grep -c '^IMPORT ' <<<"$out")
+published=$(wc -w <<<"$PUBLISHED")
 
 # 4. The kernel's own checker replays every module.
 lake env leanchecker PathFence >/dev/null || fail "leanchecker rejected a module"
 
-echo "audit: OK ($decls declarations, $thms theorems, standard axioms only; $imports imports, all Init or PathFence; no replaced implementations; leanchecker passed)"
+echo "audit: OK ($decls declarations, $thms theorems, standard axioms only; $published published statements unchanged; $imports imports, all Init or PathFence; no replaced implementations; pinned build configuration; leanchecker passed)"
