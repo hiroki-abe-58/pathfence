@@ -115,7 +115,7 @@ stdin, the conversion between `String` and `List Char`, JSON output and exit cod
 * `tests/` (Python, standard library only) runs the built CLI against:
   * fixed cases, including the CVE-style inputs, invalid UTF-8, option-like paths and
     non-canonical roots;
-  * a separate Python implementation of the rules above, on 6000 random inputs over four policies,
+  * a separate Python implementation of the rules above, on 7500 random inputs over five policies (one with overlapping roots),
     with root names and near misses (`w`, `wx`, `w.`) among the pieces. It follows the same rules,
     so it catches implementation mistakes, not mistakes in the rules;
   * `posixpath.normpath` for absolute inputs;
