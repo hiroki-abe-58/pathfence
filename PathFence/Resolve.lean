@@ -6,6 +6,7 @@ import PathFence.Walk
 `resolve base s` turns a requested path `s` into a directory, given the base directory `base` that
 relative paths start from:
 
+* an empty input is rejected (`Reason.empty`): it names no file, and the kernel refuses it too;
 * an input containing NUL is rejected (`Reason.nul`);
 * an absolute input (`/…`) is normalised lexically from `/`;
 * a relative input is walked from `base` with the beneath rule: it may not step above `base` with
@@ -13,7 +14,9 @@ relative paths start from:
 
 The results are paths of valid segments (`resolve_valid`). A relative input always stays beneath the
 base (`resolve_rel_within`). `render` prints a path, and resolving the printed form gives the same
-path back (`resolve_render`), so the string a caller passes on is exactly the path that was checked.
+path back (`resolve_render`), so re-checking a printed result gives the same decision. That is a
+statement about this lexical resolver: the file system can still resolve the same string elsewhere,
+for example through a symlink.
 -/
 
 namespace PathFence
@@ -23,6 +26,8 @@ abbrev Path := List Seg
 
 /-- Why a requested path was rejected before any policy was consulted. -/
 inductive Reason where
+  /-- The input is empty. -/
+  | empty
   /-- The input contains a NUL character. -/
   | nul
   /-- A relative input steps above the base directory with `..`. -/
@@ -36,7 +41,8 @@ def isAbs : List Char → Bool
 
 /-- Resolve the requested path `s` against the base directory `base`. -/
 def resolve (base : Path) (s : List Char) : Except Reason Path :=
-  if '\x00' ∈ s then .error .nul
+  if s = [] then .error .empty
+  else if '\x00' ∈ s then .error .nul
   else if isAbs s then .ok (walkL [] (split s.tail)).reverse
   else match walkB base.length base.reverse (split s) with
     | some o => .ok o.reverse
@@ -46,20 +52,27 @@ def resolve (base : Path) (s : List Char) : Except Reason Path :=
 def render (p : Path) : List Char :=
   if p = [] then ['/'] else '/' :: join p
 
+theorem resolve_empty (base : Path) : resolve base [] = .error .empty := rfl
+
 theorem resolve_nul (base : Path) (s : List Char) (h : '\x00' ∈ s) : resolve base s = .error .nul := by
-  simp [resolve, h]
+  have hne : s ≠ [] := List.ne_nil_of_mem h
+  simp [resolve, hne, h]
+
+theorem isAbs_ne_nil {s : List Char} (ha : isAbs s = true) : s ≠ [] := by
+  rintro rfl; simp [isAbs] at ha
 
 /-- An absolute input is normalised lexically from the root. -/
 theorem resolve_abs (base : Path) (s : List Char) (h0 : '\x00' ∉ s) (ha : isAbs s = true) :
     resolve base s = .ok (walkL [] (split s.tail)).reverse := by
-  simp [resolve, h0, ha]
+  simp [resolve, isAbs_ne_nil ha, h0, ha]
 
-/-- A relative input resolves to `p` exactly when `p` is its lexical walk from the base and every
-`..` is taken strictly inside the base. -/
-theorem resolve_rel_spec (base : Path) (s : List Char) (p : Path) (h0 : '\x00' ∉ s) (ha : isAbs s = false) :
+/-- A non-empty relative input resolves to `p` exactly when `p` is its lexical walk from the base and
+every `..` is taken strictly inside the base. -/
+theorem resolve_rel_spec (base : Path) (s : List Char) (p : Path) (hne : s ≠ []) (h0 : '\x00' ∉ s)
+    (ha : isAbs s = false) :
     resolve base s = .ok p ↔
       p = (walkL base.reverse (split s)).reverse ∧ PopsAbove base.length base.reverse (split s) := by
-  simp only [resolve, h0, ha, ite_false, Bool.false_eq_true]
+  simp only [resolve, hne, h0, ha, ite_false, Bool.false_eq_true]
   constructor
   · intro h
     split at h
@@ -76,9 +89,11 @@ theorem resolve_rel_spec (base : Path) (s : List Char) (p : Path) (h0 : '\x00' �
 /-- A relative input never resolves outside the base directory. -/
 theorem resolve_rel_within (base : Path) (s : List Char) (p : Path) (ha : isAbs s = false)
     (h : resolve base s = .ok p) : base <+: p := by
+  by_cases hne : s = []
+  · subst hne; simp [resolve_empty] at h
   by_cases h0 : '\x00' ∈ s
   · simp [resolve_nul base s h0] at h
-  · simp only [resolve, h0, ha, ite_false, Bool.false_eq_true] at h
+  · simp only [resolve, hne, h0, ha, ite_false, Bool.false_eq_true] at h
     split at h
     · rename_i o ho
       have hp : p = o.reverse := by injection h with h; exact h.symm
@@ -123,10 +138,12 @@ theorem split_pieces_ok (l : List Char) (h0 : '\x00' ∉ l) : ∀ c ∈ split l,
 /-- Every resolved path consists of valid segments, when the base does. -/
 theorem resolve_valid (base : Path) (s : List Char) (p : Path) (hb : ∀ x ∈ base, Seg.Valid x)
     (h : resolve base s = .ok p) : ∀ x ∈ p, Seg.Valid x := by
+  by_cases hne : s = []
+  · subst hne; simp [resolve_empty] at h
   by_cases h0 : '\x00' ∈ s
   · simp [resolve_nul base s h0] at h
   · cases ha : isAbs s
-    · rw [resolve_rel_spec base s p h0 ha] at h
+    · rw [resolve_rel_spec base s p hne h0 ha] at h
       rw [h.1]
       intro x hx
       exact walkL_valid base.reverse _ (fun y hy => hb y (by simpa using hy)) (split_pieces_ok s h0) x

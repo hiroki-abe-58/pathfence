@@ -1,25 +1,25 @@
 import PathFence
+import Lean
 
-/-! Print the axioms behind each published theorem. `scripts/audit.sh` checks that the only ones
-are Lean's standard `propext`, `Classical.choice` and `Quot.sound`. -/
+/-! Print every declaration of the PathFence modules (private ones included) with the axioms it
+depends on, one `AXIOMS <kind> <name>: [<axioms>]` line each. `scripts/audit.sh` checks the list, so
+it does not have to be kept by hand. -/
 
-open PathFence
+open Lean Elab Command
 
-#print axioms join_split
-#print axioms split_join
-#print axioms walkB_spec
-#print axioms walkB_keeps_base
-#print axioms walkL_of_valid
-#print axioms resolve_nul
-#print axioms resolve_abs
-#print axioms resolve_rel_spec
-#print axioms resolve_rel_within
-#print axioms resolve_valid
-#print axioms resolve_render
-#print axioms within_iff_render
-#print axioms check_allow_iff
-#print axioms check_allow_rel_within_base
-#print axioms check_allow_of_add_deny
-#print axioms check_allow_add_allow
-#print axioms confine_allow_iff
-#print axioms parseRoot_valid
+run_cmd do
+  let env ← getEnv
+  let mut lines : Array String := #[]
+  for (name, ci) in env.constants.map₁.toList do
+    let some idx := env.getModuleIdxFor? name | continue
+    let some m := env.header.moduleNames[idx.toNat]? | continue
+    unless (`PathFence).isPrefixOf m do continue
+    let kind := match ci with
+      | .thmInfo _ => "theorem"
+      | .axiomInfo _ => "axiom"
+      | .opaqueInfo _ => "opaque"
+      | _ => "def"
+    let axs ← collectAxioms name
+    lines := lines.push s!"AXIOMS {kind} {name}: {axs.toList}"
+  for l in lines.qsort (· < ·) do
+    IO.println l

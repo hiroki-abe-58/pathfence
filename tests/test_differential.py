@@ -1,19 +1,22 @@
-"""Random inputs: the binary must agree with the independent Python model, and absolute inputs must
-normalise like `posixpath.normpath` (up to the leading-`//` case, which POSIX leaves to the
-implementation and PathFence treats as `/`)."""
+"""Random inputs: the binary must agree with the Python model, and absolute inputs must normalise like
+`posixpath.normpath` (up to the leading-`//` case, which POSIX leaves to the implementation and
+PathFence treats as `/`)."""
 import posixpath
 import random
 import unittest
 
-from common import as_pair, model_check, run_check
+from common import as_pair, model_check, model_under, run_check
 
-PIECES = ["a", "b", "c", "é", ".", "..", "", "...", ".a", "a.", " ", "%2e", "\\", "a\\..", "-x", "~"]
+# Root names and their near misses ("w" against "wx" and "w.") make random absolute inputs land inside,
+# next to and around the allowed roots, which is where string-prefix bugs show.
+PIECES = ["a", "b", "c", "é", ".", "..", "", "...", ".a", "a.", " ", "%2e", "\\", "a\\..", "-x", "~",
+          "w", "wx", "w.", "tmp", "s", "sx", ".git"]
 
 
 def random_path(rng):
     n = rng.randint(0, 8)
     s = "/".join(rng.choice(PIECES) for _ in range(n))
-    if rng.random() < 0.4:
+    if rng.random() < 0.5:
         s = "/" * rng.randint(1, 3) + s
     if rng.random() < 0.2:
         s += "/"
@@ -26,23 +29,24 @@ class Differential(unittest.TestCase):
         policies = [
             (["/w"], [], None),
             (["/w/a"], ["/w/a/b"], None),
-            (["/w", "/tmp/s"], ["/w/b"], "/w/c"),
+            (["/w", "/tmp/s"], ["/w/b", "/w/.git"], "/w/c"),
             (["/"], ["/w"], "/w"),
         ]
         for allow, deny, base in policies:
             inputs = [random_path(rng) for _ in range(1500)]
             _, out = run_check(inputs, allow, deny, base=base, stdin=True)
             self.assertEqual(len(out), len(inputs))
-            seen = set()
+            seen = {}
             for s, r in zip(inputs, out):
                 with self.subTest(input=s, allow=allow, deny=deny, base=base):
                     self.assertEqual(r["input"], s)
                     self.assertEqual(as_pair(r), model_check(s, allow, deny, base))
-                seen.add(r["decision"])
-            # Each policy must see allows and rejects (and denies, where it can deny at all).
-            self.assertIn("allow", seen)
-            self.assertIn("reject", seen)
-            self.assertIn("deny", seen)
+                    if r["decision"] == "allow":
+                        self.assertEqual((r["root"], r["rel"]), model_under(r["path"], allow))
+                seen[r["decision"]] = seen.get(r["decision"], 0) + 1
+            # Each policy must see each decision often, or the comparison says little.
+            for d in ("allow", "deny", "reject"):
+                self.assertGreater(seen.get(d, 0), 50, (allow, deny, base, seen))
 
     def test_absolute_matches_normpath(self):
         rng = random.Random(7)

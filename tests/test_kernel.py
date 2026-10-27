@@ -3,9 +3,12 @@ on a real directory tree without symlinks.
 
 For each random relative path, the directories it enters are created first, so that the only reason
 for the kernel to refuse is leaving the base. PathFence must allow exactly the paths the kernel
-resolves. Skipped where `openat2` is unavailable (not Linux, or kernel older than 5.6).
+opens, with the same resulting directory (read back through /proc/self/fd), and must reject with
+`escapes` exactly the paths the kernel refuses with EXDEV. Skipped where `openat2` is unavailable
+(not Linux, kernel older than 5.6, or blocked by a seccomp filter).
 """
 import ctypes
+import errno
 import os
 import random
 import shutil
@@ -21,18 +24,17 @@ O_PATH = 0o10000000
 O_CLOEXEC = 0o2000000
 RESOLVE_NO_SYMLINKS = 0x04
 RESOLVE_BENEATH = 0x08
-PIECES = ["a", "b", "é", ".", "..", "..", "", "...", " ", "%2e", "\\"]
+# "base" is the base directory's own name, so that inputs like "../base/x" occur.
+PIECES = ["a", "b", "é", ".", "..", "..", "", "...", " ", "%2e", "\\", "base"]
 
 
-def openat2_ok(dirfd, path):
+def openat2(dirfd, path):
+    """Return (fd, 0) on success, or (-1, errno)."""
     libc = ctypes.CDLL(None, use_errno=True)
     how = struct.pack("QQQ", O_PATH | O_CLOEXEC, 0, RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS)
     buf = ctypes.create_string_buffer(how, len(how))
     fd = libc.syscall(SYS_openat2, dirfd, path.encode(), buf, len(how))
-    if fd >= 0:
-        os.close(fd)
-        return True, 0
-    return False, ctypes.get_errno()
+    return (fd, 0) if fd >= 0 else (-1, ctypes.get_errno())
 
 
 def make_dirs(base, path):
@@ -55,12 +57,15 @@ def openat2_available():
         return False
     d = tempfile.mkdtemp()
     try:
-        fd = os.open(d, os.O_RDONLY | os.O_DIRECTORY)
+        dirfd = os.open(d, os.O_RDONLY | os.O_DIRECTORY)
         try:
-            ok, err = openat2_ok(fd, ".")
-            return ok or err not in (38,)  # ENOSYS
-        finally:
+            fd, _ = openat2(dirfd, ".")
+            if fd < 0:
+                return False  # ENOSYS, or EPERM from a seccomp filter
             os.close(fd)
+            return True
+        finally:
+            os.close(dirfd)
     finally:
         shutil.rmtree(d)
 
@@ -76,24 +81,32 @@ class KernelBeneath(unittest.TestCase):
                 inputs.append(s)
         tmp = tempfile.mkdtemp()
         try:
-            base = os.path.join(tmp, "base")
+            base = os.path.realpath(os.path.join(tmp, "base"))
             os.mkdir(base)
             for s in inputs:
                 make_dirs(base, s)
             _, out = run_check(inputs, [base], stdin=True)
-            fd = os.open(base, os.O_RDONLY | os.O_DIRECTORY)
+            dirfd = os.open(base, os.O_RDONLY | os.O_DIRECTORY)
             allowed = refused = 0
             try:
                 for s, r in zip(inputs, out):
                     with self.subTest(input=s):
-                        kernel_ok, err = openat2_ok(fd, s)
-                        self.assertEqual(r["decision"] == "allow", kernel_ok, f"errno {err}")
-                        if not kernel_ok:
-                            self.assertEqual(err, 18)  # EXDEV: the kernel refused to leave the base
-                    allowed += kernel_ok
-                    refused += not kernel_ok
+                        fd, err = openat2(dirfd, s)
+                        if fd >= 0:
+                            try:
+                                opened = os.readlink(f"/proc/self/fd/{fd}")
+                            finally:
+                                os.close(fd)
+                            self.assertEqual(r["decision"], "allow")
+                            self.assertEqual(r["path"], opened)
+                            self.assertEqual(r["root"], base)
+                            allowed += 1
+                        else:
+                            self.assertEqual(err, errno.EXDEV)  # the kernel refused to leave the base
+                            self.assertEqual((r["decision"], r.get("reason")), ("reject", "escapes"))
+                            refused += 1
             finally:
-                os.close(fd)
+                os.close(dirfd)
             # Both outcomes must occur often, or the comparison says little.
             self.assertGreater(allowed, 100)
             self.assertGreater(refused, 100)

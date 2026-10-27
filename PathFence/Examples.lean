@@ -48,8 +48,9 @@ def check1 (r s : String) : Decision := confineString (root r) s
 #guard check1 "/w" "//w///x/./y" = .allow (root "/w/x/y")
 #guard check1 "/w" "/../w/x" = .allow (root "/w/x")
 
--- Empty pieces and `.` change nothing; NUL is always rejected.
-#guard check1 "/w" "" = .allow (root "/w")
+-- Empty pieces and `.` change nothing; an empty input and NUL are always rejected.
+#guard check1 "/w" "" = .reject .empty
+#guard check1 "/w" "." = .allow (root "/w")
 #guard check1 "/w" "./a//b/" = .allow (root "/w/a/b")
 #guard check1 "/w" "a\x00b" = .reject .nul
 
@@ -74,8 +75,19 @@ def twoRoots : Policy :=
 #guard twoRoots.checkString "/tmp/scratchpad/out.txt" = .deny (root "/tmp/scratchpad/out.txt")
 #guard twoRoots.checkString "../other/file" = .reject .escapes
 
--- Printing and re-reading a resolved path gives the same path.
+-- An allowed path, split into the root that allows it and the rest below that root.
+#guard twoRoots.allowedUnder (root "/tmp/scratch/out/x") = some (root "/tmp/scratch", [['o','u','t'], ['x']])
+#guard twoRoots.allowedUnder (root "/home/u/project") = some (root "/home/u/project", [])
+#guard twoRoots.allowedUnder (root "/tmp/scratchpad") = none
+
+-- Roots are taken literally: only the canonical form is accepted.
+#guard parseRoot "/" = some []
 #guard (root "/w/a b/c").toString = "/w/a b/c"
-#guard parseRoot (root "/w/x/../y/").toString = some (root "/w/y")
+#guard parseRoot "/w/.." = none
+#guard parseRoot "/w/" = none
+#guard parseRoot "//w" = none
+#guard parseRoot "/w/./x" = none
+#guard parseRoot "w" = none
+#guard parseRoot "" = none
 
 end PathFence.Examples

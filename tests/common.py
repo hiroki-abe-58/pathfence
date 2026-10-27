@@ -1,7 +1,8 @@
-"""Shared helpers: run the `pathfence` binary, and an independent Python model of its documented rules.
+"""Shared helpers: run the `pathfence` binary, and a Python model of its documented rules.
 
-The model is written from the README's description, not from the Lean code, so the tests compare two
-separate implementations of the same specification.
+The model is a separate implementation of the rules in the README, written without the Lean code. It
+follows the same rules, so it catches implementation mistakes, not mistakes in the rules themselves
+(the kernel test in test_kernel.py checks the relative-path rule against Linux).
 """
 import json
 import os
@@ -12,23 +13,26 @@ BIN = os.environ.get("PATHFENCE_BIN", os.path.join(ROOT, ".lake", "build", "bin"
 
 
 def run_check(paths, allow, deny=(), base=None, stdin=False):
-    """Run `pathfence check` and return (exit status, list of decoded JSON results)."""
-    args = [BIN, "check"]
+    """Run `pathfence check` and return (exit status, list of decoded JSON results).
+
+    An allowed root of "/" is passed as `--allow-all`."""
+    args = ["check"]
     for a in allow:
-        args += ["--allow", a]
+        args += ["--allow-all"] if a == "/" else ["--allow", a]
     for d in deny:
         args += ["--deny", d]
     if base is not None:
         args += ["--base", base]
     if stdin:
-        return run_raw(args[1:] + ["--stdin"], "".join(p + "\n" for p in paths).encode())
-    return run_raw(args[1:] + ["--"] + list(paths))
+        return run_raw(args + ["--stdin"], "".join(p + "\n" for p in paths).encode())
+    return run_raw(args + ["--"] + list(paths))
 
 
 def run_raw(args, data=None):
     """Run `pathfence` with `args` (str, or bytes via surrogateescape) and stdin bytes `data`."""
     proc = subprocess.run([BIN] + list(args), input=data, capture_output=True, check=False)
-    return proc.returncode, [json.loads(l) for l in proc.stdout.decode().splitlines() if l]
+    out = proc.stdout.decode("ascii")  # the output is ASCII by design
+    return proc.returncode, [json.loads(l) for l in out.split("\n") if l]
 
 
 # ---- the reference model -------------------------------------------------------------------------
@@ -62,8 +66,15 @@ def beneath(base, parts):
 
 
 def parse_root(s):
-    assert s.startswith("/") and "\x00" not in s
-    return lexical([], s[1:].split("/"))
+    """A root must be canonical: '/' or '/seg/seg' with valid segments. Returns None otherwise."""
+    if s == "/":
+        return []
+    if not s.startswith("/") or "\x00" in s:
+        return None
+    parts = s[1:].split("/")
+    if any(c in ("", ".", "..") for c in parts):
+        return None
+    return parts
 
 
 def render(p):
@@ -79,6 +90,8 @@ def model_check(s, allow, deny=(), base=None):
     allow_p = [parse_root(a) for a in allow]
     deny_p = [parse_root(d) for d in deny]
     base_p = parse_root(base) if base is not None else allow_p[0]
+    if s == "":
+        return ("reject", "empty")
     if "\x00" in s:
         return ("reject", "nul")
     if s.startswith("/"):
@@ -89,6 +102,17 @@ def model_check(s, allow, deny=(), base=None):
             return ("reject", "escapes")
     ok = any(within(a, p) for a in allow_p) and not any(within(d, p) for d in deny_p)
     return ("allow" if ok else "deny", render(p))
+
+
+def model_under(path, allow):
+    """The first allowed root that `path` (an allowed result) is within, and the rest below it."""
+    p = [c for c in path.split("/") if c]
+    for a in allow:
+        r = parse_root(a)
+        if within(r, p):
+            rest = p[len(r):]
+            return render(r), "/".join(rest) if rest else "."
+    raise AssertionError(f"{path} is under no allowed root")
 
 
 def as_pair(result):

@@ -1,7 +1,8 @@
 """Fixed cases, including inputs in the style of published path-confinement bugs (CWE-22)."""
+import subprocess
 import unittest
 
-from common import as_pair, model_check, run_check, run_raw
+from common import BIN, as_pair, model_check, model_under, run_check, run_raw
 
 CASES = [
     # (allow roots, deny roots, input, expected decision, expected path or reason)
@@ -20,7 +21,7 @@ CASES = [
     (["/w"], [], "/w/x/../y", "allow", "/w/y"),
     (["/w"], [], "//w///x/./y", "allow", "/w/x/y"),
     (["/w"], [], "/../../w/x", "allow", "/w/x"),
-    (["/w"], [], "", "allow", "/w"),
+    (["/w"], [], "", "reject", "empty"),
     (["/w"], [], ".", "allow", "/w"),
     (["/w"], [], "./a//b/", "allow", "/w/a/b"),
     # POSIX names are bytes other than '/' and NUL: these are ordinary names.
@@ -33,7 +34,7 @@ CASES = [
     (["/w"], ["/w/.git"], "src/../.git/hooks/pre-commit", "deny", "/w/.git/hooks/pre-commit"),
     (["/w"], ["/w/.git"], ".gitignore", "allow", "/w/.gitignore"),
     (["/w"], ["/w/.git"], "/w/.git", "deny", "/w/.git"),
-    # Root "/" allows every absolute path.
+    # Allowing everything ("/", passed as --allow-all).
     (["/"], [], "/etc/passwd", "allow", "/etc/passwd"),
     (["/"], [], "..", "reject", "escapes"),
 ]
@@ -48,6 +49,16 @@ class FixedCases(unittest.TestCase):
                 self.assertEqual(as_pair(out[0]), (decision, detail))
                 self.assertEqual(model_check(s, allow, deny), (decision, detail))
                 self.assertEqual(status, 0 if decision == "allow" else 1)
+                if decision == "allow":
+                    self.assertEqual((out[0]["root"], out[0]["rel"]), model_under(detail, allow))
+
+    def test_root_and_rel(self):
+        _, out = run_check(["/tmp/scratch/out/x", "src/main.rs", "."], ["/home/u/p", "/tmp/scratch"])
+        self.assertEqual([(r["root"], r["rel"]) for r in out],
+                         [("/tmp/scratch", "out/x"), ("/home/u/p", "src/main.rs"), ("/home/u/p", ".")])
+        # The first allowed root that contains the path is named.
+        _, out = run_check(["/w/a/b"], ["/w", "/w/a"])
+        self.assertEqual((out[0]["root"], out[0]["rel"]), ("/w", "a/b"))
 
     def test_nul_is_rejected(self):
         # NUL cannot be passed in argv; it can be passed on stdin.
@@ -71,6 +82,18 @@ class FixedCases(unittest.TestCase):
         self.assertEqual(run_check(["x�y"], ["/w"], stdin=True)[1][0]["decision"], "allow")
         self.assertEqual(run_raw(["check", "--allow", "/w\udcff", "--", "a"])[0], 2)
 
+    def test_ascii_output(self):
+        # Line separators and other non-ASCII characters are escaped, so splitting the output on any
+        # line boundary gives one result per input.
+        names = ["a b", "c d", "e\x85f", "g\x7fh", "\U0001f600", "é"]
+        status, out = run_check(names, ["/w"], stdin=True)
+        self.assertEqual([r["input"] for r in out], names)
+        self.assertEqual([r["path"] for r in out], ["/w/" + n for n in names])
+        raw = subprocess.run([BIN, "check", "--allow", "/w", "--stdin"], input="\n".join(names).encode(),
+                             capture_output=True, check=False).stdout
+        self.assertTrue(raw.isascii())
+        self.assertEqual(len(raw.decode().splitlines()), len(names))
+
     def test_separate_base(self):
         status, out = run_check(["out.txt", "/tmp/scratch/x", "/tmp/scratchpad/x"],
                                 ["/home/u/p", "/tmp/scratch"], base="/home/u/p")
@@ -78,9 +101,29 @@ class FixedCases(unittest.TestCase):
                          [("allow", "/home/u/p/out.txt"), ("allow", "/tmp/scratch/x"),
                           ("deny", "/tmp/scratchpad/x")])
 
+    def test_roots_are_literal(self):
+        # Non-canonical roots are refused, not normalised (`/w/..` would otherwise become `/`).
+        for root in ["/w/..", "/w/", "//w", "/w/./x", "w", "", "/tmp/x/../.."]:
+            with self.subTest(root=root):
+                self.assertEqual(run_raw(["check", "--allow", root, "--", "a"])[0], 2)
+                self.assertEqual(run_raw(["check", "--allow", "/w", "--deny", root, "--", "a"])[0], 2)
+        # Allowing everything must be explicit.
+        self.assertEqual(run_raw(["check", "--allow", "/", "--", "/etc/passwd"])[0], 2)
+        self.assertEqual(run_raw(["check", "--allow-all", "--", "/etc/passwd"])[0], 0)
+
     def test_usage_errors(self):
         self.assertEqual(run_check(["x"], [])[0], 2)
         self.assertEqual(run_check(["x"], ["relative"])[0], 2)
+        # Paths go after `--`; before it, anything that is not an option is an error.
+        self.assertEqual(run_raw(["check", "--allow", "/w", "x"])[0], 2)
+        self.assertEqual(run_raw(["check", "--allow", "/w", "--bogus", "--", "x"])[0], 2)
+        # After `--`, option names are paths.
+        status, out = run_raw(["check", "--allow", "/w", "--", "--stdin", "--allow"], b"")
+        self.assertEqual([as_pair(r) for r in out], [("allow", "/w/--stdin"), ("allow", "/w/--allow")])
+        # Nothing to check is an error, not a pass.
+        self.assertEqual(run_raw(["check", "--allow", "/w"])[0], 2)
+        self.assertEqual(run_raw(["check", "--allow", "/w", "--stdin"], b"")[0], 2)
+        self.assertEqual(run_raw(["check", "--allow", "/w", "--"])[0], 2)
 
 
 if __name__ == "__main__":
