@@ -33,8 +33,8 @@ Confinement checks are easy to get almost right. Published examples:
   0.6.4 / 2025.7.01) and [CVE-2025-54794](https://www.cve.org/CVERecord?id=CVE-2025-54794) (Claude
   Code before 0.2.111): the check was a string-prefix test, so `/tmp/allowed_dir_malicious` passed
   as "inside" `/tmp/allowed_dir`.
-* [CVE-2025-22873](https://www.cve.org/CVERecord?id=CVE-2025-22873) (Go `os.Root` before 1.23.9 /
-  1.24.3): `Root.Open("../")` opened the parent of the root.
+* [CVE-2025-22873](https://www.cve.org/CVERecord?id=CVE-2025-22873) (Go `os.Root`, new in 1.24; fixed
+  in 1.24.3): `Root.Open("../")` opened the parent of the root.
 
 PathFence compares paths segment by segment, and its theorems rule out both kinds of mistake for
 the decision it makes. [`PathFence/Examples.lean`](PathFence/Examples.lean) runs it on inputs in the
@@ -82,8 +82,10 @@ equation lemmas Lean generates. The audit checks the axioms of every one of them
 | `within_iff_render` | For a root other than `/`, segment-wise "within" is the same as a string test on the printed paths: equal, or a prefix **followed by `/`**. This is the correct form of the string check that failed in the CVEs above. |
 | `allowedUnder_spec`, `allowedUnder_of_allow` | Every allowed path is reported with an allowed root `root` and a remainder `rel` such that `root ++ rel` is the path. |
 | `check_allow_of_add_deny`, `check_allow_add_allow` | Adding a denied root never allows more; adding an allowed root never allows less. |
+| `confine_allow_iff` | For a single root that is both the base and the only allowed root: allowed iff the input resolves within the root. |
 | `parseRoot_render`, `parseRoot_valid`, `Policy.make_valid` | A parsed root prints back to exactly its string, and consists of valid segments, as do all roots of a policy built with `Policy.make`. |
-| `walkB_spec`, `join_split`, `split_join` | The beneath walk equals its declarative specification; splitting on `/` and joining are inverse. |
+| `walkB_spec`, `walkB_keeps_base`, `walkL_of_valid` | The beneath walk equals its declarative specification and never removes the base; walking valid segments appends them. |
+| `join_split`, `split_join` | Splitting on `/` and joining are inverse. |
 
 That the lexical normalisation of absolute inputs matches POSIX `normpath` is tested, not proven.
 
@@ -260,5 +262,5 @@ answer, and use a confined open for the actual access.
 
 Copyright 2026 the PathFence authors. Apache-2.0; see [LICENSE](LICENSE).
 
-Written with AI assistance (Claude Code, Claude Opus 5.5). It was reviewed in separate AI-assisted
-review sessions (also Claude Opus 5.5), not yet by a human expert.
+The code and proofs were written with Claude Code (Claude Opus 5.5). So far they have been reviewed
+only by AI, in separate Claude sessions; no human has reviewed them yet.

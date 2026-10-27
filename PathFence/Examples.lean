@@ -9,7 +9,7 @@ groups follow published bugs in path-confinement checks (CWE-22):
 
 * CVE-2025-54794 and CVE-2025-53110: a check of the form "the path starts with the root string"
   accepted a sibling directory whose name starts with the root's name.
-* CVE-2025-22873 (Go `os.Root`): a path ending in `../` reached the parent of the root.
+* CVE-2025-22873 (Go `os.Root` in 1.24.0–1.24.2): a path ending in `../` reached the parent of the root.
 
 They show what PathFence decides for those inputs. They do not reproduce the original programs.
 -/
