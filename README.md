@@ -67,9 +67,13 @@ Lean's standard axioms (`propext`, `Classical.choice`, `Quot.sound`; see
 [`scripts/audit.sh`](scripts/audit.sh)).
 
 The table lists the 25 published theorems. Their statements are pinned in
-[`scripts/statements.expected`](scripts/statements.expected), both as printed text and as a hash of
-the statement together with every PathFence definition it depends on, directly or indirectly. The
-audit fails if a theorem is missing or renamed, if its statement changes, or if any of those
+[`scripts/statements.expected`](scripts/statements.expected) in two forms:
+* the printed text;
+* a SHA-256 hash of the statement together with the raw terms of every PathFence definition it
+  depends on, directly or indirectly. That includes implicit arguments, instances, and the
+  constructors of inductive types.
+
+The audit fails if a theorem is missing or renamed, if its statement changes, or if any of those
 definitions changes. The library's modules hold 138 theorem declarations in all, counting
 helper lemmas and the equation lemmas Lean generates. The audit checks the axioms of every
 declaration.

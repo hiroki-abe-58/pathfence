@@ -12,7 +12,7 @@
 #   scripts/audit.sh                     run the audit
 #   scripts/audit.sh --pins              only check the pinned build configuration (needs no Lake;
 #                                        CI runs it before anything builds)
-#   scripts/audit.sh --print-statements  print the published statements and dependency hashes (to
+#   scripts/audit.sh --print-statements  print the published statements and their SHA-256 pins (to
 #                                        review a change to scripts/statements.expected)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -49,11 +49,21 @@ fi
 # 3. Environment: imports, replaced implementations, axioms of every declaration, and the published
 #    statements with the definitions they depend on.
 out=$(lake env lean scripts/Axioms.lean)
+canon_file=$(mktemp); trap 'rm -f "$canon_file"' EXIT
+grep '^CANON ' <<<"$out" > "$canon_file"
+# SHA-256 of a theorem's printed statement and the raw terms of everything it depends on.
+depsha() {
+  local deps n
+  deps=$(grep -F "DEPS $1 " <<<"$out" | cut -d' ' -f3-) || return 1
+  { grep -F "STATEMENT $1 : " <<<"$out"
+    for n in $deps; do awk -v n="$n" '$1 == "CANON" && $2 == n' "$canon_file"; done
+  } | sha256sum | cut -d' ' -f1
+}
 published_lines=""
 for t in $PUBLISHED; do
   s=$(grep -F "STATEMENT PathFence.$t : " <<<"$out") || fail "missing theorem PathFence.$t"
-  d=$(grep -F "DEPHASH PathFence.$t " <<<"$out") || fail "missing dependency hash for PathFence.$t"
-  published_lines+="$s"$'\n'"$d"$'\n'
+  d=$(depsha "PathFence.$t") || fail "missing dependencies for PathFence.$t"
+  published_lines+="$s"$'\n'"DEPSHA PathFence.$t $d"$'\n'
 done
 if [ "${1:-}" = "--print-statements" ]; then printf '%s' "$published_lines"; exit 0; fi
 

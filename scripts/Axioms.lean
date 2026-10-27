@@ -12,10 +12,13 @@ import Lean
   theorems are about.
 * `STATEMENT <name> : <type>` for every theorem, pretty-printed on one line, so that the published
   statements can be compared with `scripts/statements.expected`.
-* `DEPHASH <name> <hash>` for every theorem: a hash of its statement and of every PathFence
-  definition the statement depends on, directly or indirectly (types and bodies, not proofs). A
-  change to `Policy.Valid`, `resolve` or anything else a statement refers to changes the hash, even
-  when the printed statement stays the same. -/
+* `DEPS <name> <dep> …` for every theorem: every PathFence constant its statement depends on,
+  directly or indirectly (through types and definition bodies, not proofs; an inductive type brings
+  its constructors and recursor), and `CANON <name> <text>` for every PathFence constant: its type,
+  value and constructors as raw terms (implicit arguments and instances included). `audit.sh`
+  hashes a statement's `CANON` lines with SHA-256, so a change to `Policy.Valid`, `resolve`, a
+  constructor list or anything else a statement refers to changes the pin, even when the printed
+  statement stays the same. -/
 
 open Lean Elab Command
 
@@ -34,16 +37,28 @@ partial def depClosure (env : Environment) (isOurs : Name → Bool) (todo : List
       let body := match ci with
         | .thmInfo _ => []
         | _ => (ci.value?.map Expr.getUsedConstants).getD #[] |>.toList
-      depClosure env isOurs (ci.type.getUsedConstants.toList ++ body ++ rest) (seen.insert n)
+      let family := match ci with
+        | .inductInfo v => v.ctors ++ [mkRecName n]
+        | .ctorInfo v => [v.induct]
+        | _ => []
+      depClosure env isOurs (ci.type.getUsedConstants.toList ++ body ++ family ++ rest) (seen.insert n)
 
-/-- A hash of a theorem's statement and of the definitions it depends on. -/
-def depHash (env : Environment) (isOurs : Name → Bool) (ci : ConstantInfo) : UInt64 :=
-  let deps := depClosure env isOurs ci.type.getUsedConstants.toList {}
-  let names := deps.toList.toArray.qsort (fun a b => a.toString < b.toString)
-  names.foldl (init := hash ci.type) fun h n =>
-    match env.find? n with
-    | some d => mixHash h (mixHash (hash n) (mixHash (hash d.type) (hash (d.value?.getD (.sort .zero)))))
-    | none => h
+/-- The PathFence constants a theorem's statement depends on, sorted. -/
+def statementDeps (env : Environment) (isOurs : Name → Bool) (ci : ConstantInfo) : Array Name :=
+  (depClosure env isOurs ci.type.getUsedConstants.toList {}).toList.toArray.qsort
+    (fun a b => a.toString < b.toString)
+
+/-- A constant as one line of raw terms: type, value (not for theorems) and, for an inductive type,
+its constructors, parameters and indices. -/
+def canon (ci : ConstantInfo) : String :=
+  let value := match ci with
+    | .thmInfo _ => ""
+    | _ => (ci.value?.map toString).getD ""
+  let family := match ci with
+    | .inductInfo v => s!" ctors={v.ctors} params={v.numParams} indices={v.numIndices}"
+    | .ctorInfo v => s!" induct={v.induct} cidx={v.cidx} fields={v.numFields}"
+    | _ => ""
+  s!"{ci.type} := {value}{family}".replace "\n" " "
 
 run_cmd do
   let env ← getEnv
@@ -63,6 +78,7 @@ run_cmd do
       | .axiomInfo _ => "axiom"
       | .opaqueInfo _ => "opaque"
       | _ => "def"
+    lines := lines.push s!"CANON {name} {canon ci}"
     let axs ← collectAxioms name
     lines := lines.push s!"AXIOMS {kind} {name}: {axs.toList}"
     if kind == "theorem" then
@@ -70,7 +86,7 @@ run_cmd do
       let raw := (fmt.pretty 100000).replace "\n" " "
       let stmt := " ".intercalate ((raw.splitOn " ").filter (· ≠ ""))
       lines := lines.push s!"STATEMENT {name} : {stmt}"
-      lines := lines.push s!"DEPHASH {name} {depHash env isOurs ci}"
+      lines := lines.push s!"DEPS {name} {" ".intercalate ((statementDeps env isOurs ci).toList.map toString)}"
     if let some impl := Compiler.getImplementedBy? env name then
       lines := lines.push s!"IMPLBY {name} {impl}"
     if isExtern env name then
