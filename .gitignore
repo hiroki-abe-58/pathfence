@@ -1,2 +1,5 @@
 /.lake
 __pycache__/
+/dist/
+/wheelhouse/
+/.mypy_cache/
