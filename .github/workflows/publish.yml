@@ -18,6 +18,8 @@ jobs:
       matrix:
         os: [ubuntu-22.04, ubuntu-24.04-arm, macos-15, macos-15-intel]
     runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '15.0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6

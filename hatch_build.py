@@ -1,6 +1,8 @@
 """Compile the Lean CLI and include it in a platform-specific, Python-ABI-free wheel."""
 
 from pathlib import Path
+import os
+import platform
 import subprocess
 import sys
 from typing import Any
@@ -14,7 +16,13 @@ class CustomBuildHook(BuildHookInterface):
         if sys.platform not in {"linux", "darwin"}:
             raise RuntimeError("PathFence wheels support Linux and macOS. Use WSL on Windows.")
         root = Path(self.root)
-        subprocess.run(["lake", "build"], cwd=root, check=True)
+        env = os.environ.copy()
+        if sys.platform == "darwin":
+            # Leanc otherwise defaults to 99.0 to suppress linker warnings.
+            # Rebuild objects too: Lake's cache may have used that default.
+            env.setdefault("MACOSX_DEPLOYMENT_TARGET", platform.mac_ver()[0])
+            subprocess.run(["lake", "clean"], cwd=root, env=env, check=True)
+        subprocess.run(["lake", "build"], cwd=root, env=env, check=True)
         prefix = Path(subprocess.check_output(
             ["lean", "--print-prefix"], cwd=root, text=True
         ).strip())
