@@ -2,12 +2,14 @@
 
 Copies the repository to a temporary directory, then, for each mutant, rebuilds the CLI with a
 mutated copy of the decision functions (the proven library is untouched) and runs the test suite.
-The E mutants instead plant a bug in examples/safe_extract.py and use the unmutated CLI. M0 is the
-unmutated control and must pass; every other mutant must make the suite fail. Exits 1 otherwise.
+The E mutants instead plant a bug in examples/safe_extract.py and use the unmutated CLI. V1 keeps the
+unmutated decision functions and changes the version `--version` prints. M0 is the unmutated control
+and must pass; every other mutant must make the suite fail. Exits 1 otherwise.
 
     python3 tests/mutants.py
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -80,6 +82,12 @@ EXAMPLE_MUTANTS = {
     "E3 the raw name created instead of rel": ('r["rel"].split("/")', 'name.split("/")'),
 }
 
+# A bug in Main.lean outside the decision functions (those are the control's), as the line that
+# replaces `IO.println "pathfence <version>"`: a release that bumped only lakefile.lean.
+VERSION_MUTANTS = {
+    "V1 --version not the package version": 'IO.println "pathfence 0.0.0"',
+}
+
 
 def main():
     tmp = tempfile.mkdtemp()
@@ -94,15 +102,20 @@ def main():
     example_orig = open(example, encoding="utf-8").read()
     for old, _ in EXAMPLE_MUTANTS.values():
         assert example_orig.count(old) == 1, f"safe_extract.py changed; update the example mutants ({old!r})"
+    version_lines = re.findall(r'IO\.println "pathfence [^"]*"', orig)
+    assert len(version_lines) == 1 and version_lines[0] not in VERSION_MUTANTS.values(), \
+        f"Main.lean changed; update the version mutants ({version_lines})"
     ok = True
     try:
-        for name, over in list(MUTANTS.items()) + [(n, {}) for n in EXAMPLE_MUTANTS]:
+        for name, over in list(MUTANTS.items()) + [(n, {}) for n in [*EXAMPLE_MUTANTS, *VERSION_MUTANTS]]:
             pre = PRELUDE
             for k, v in dict(BASE, **over).items():
                 pre = pre.replace(k, v)
             m = orig.replace(hooks[0], "let d := Mut.check pol s.toList;")
             m = m.replace(hooks[1], "match Mut.allowedUnder pol p with")
             m = m.replace(hooks[2], pre + "\n" + hooks[2])
+            if name in VERSION_MUTANTS:
+                m = m.replace(version_lines[0], VERSION_MUTANTS[name])
             open(main_lean, "w", encoding="utf-8").write(m)
             old, new = EXAMPLE_MUTANTS.get(name, ("", ""))
             open(example, "w", encoding="utf-8").write(example_orig.replace(old, new) if old else example_orig)

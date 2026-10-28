@@ -133,6 +133,9 @@ stdin, the conversion between `String` and `List Char`, JSON output and exit cod
   * fixed cases, including the CVE-style inputs, invalid UTF-8, option-like paths and
     non-canonical roots, and a 1 MB path that goes 200,000 levels down and back up, which must be
     checked within 10 seconds (it takes 0.1 s; see [Performance](#performance));
+  * the version in `lakefile.lean`, which the Python package takes too: `pathfence --version` must
+    print it, and the status line at the top of this README must name it
+    ([Release checks](docs/release-checks.md));
   * a separate Python implementation of the rules above, on 7500 random inputs over five policies (one with overlapping roots),
     with root names and near misses (`w`, `wx`, `w.`) among the pieces. It follows the same rules,
     so it catches implementation mistakes, not mistakes in the rules;
@@ -159,10 +162,11 @@ stdin, the conversion between `String` and `List Char`, JSON output and exit cod
     * links planted in `dest` mid-extraction by a simulated second process, a replaced `dest`, and a
       bad CRC in the middle of a zip. Each must raise `OSError` without anything outside `dest`
       changing.
-* `tests/mutants.py` checks the tests themselves. It rebuilds the CLI with eleven plausible bugs, and
+* `tests/mutants.py` checks the tests themselves. It rebuilds the CLI with twelve plausible bugs, and
   plants three in `examples/safe_extract.py`, and requires each one to make the suite fail.
   * The CLI bugs include the CVE-style string prefix, an off-by-one in the beneath rule, an ignored
-    deny root, accepting the empty input, and a wrong `root` or `rel`.
+    deny root, accepting the empty input, a wrong `root` or `rel`, and a `--version` that is not the
+    package version.
   * The example's bugs are extracting hard links as files, creating files without `O_EXCL`, and
     creating the raw name instead of `rel`.
 
