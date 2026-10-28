@@ -280,7 +280,7 @@ zip) refuses instead of repairing. Before it writes anything, it checks:
 
 If any of these fails, or `dest` cannot be created, it raises `Refused` and nothing has been written.
 Otherwise it creates `dest`, which must not exist, with mode 0700, and checks that the directory it
-opened is that private directory. Each directory is created with `mkdirat` and opened, one
+opened is owned by the caller and private. Each directory is created with `mkdirat` and opened, one
 component at a time, with `openat2(RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_XDEV)`. Each
 file is created with `O_CREAT | O_EXCL` and given mode 0755 or 0644 with `fchmod`. Owners, times, and
 setuid, setgid or sticky bits are never set. From here on any failure is an `OSError`, and what was
@@ -297,6 +297,8 @@ The theorems cover only the name layer:
 It does not cover:
 
 * macOS and Windows. It needs openat2 and refuses to run elsewhere.
+* File systems without Unix owners and modes (WSL's `/mnt/c`, vfat, some CIFS or NFS mounts): the
+  owner and mode check of `dest` fails there with `EPERM`, leaving an empty `dest`.
 * Case-insensitive or normalising file systems, where two different names can be one file. In a
   Linux casefold directory, `O_CREAT | O_EXCL` should make the second of two such names fail with
   `EEXIST`: an `OSError` after the members before it were written, not a refusal. This is not

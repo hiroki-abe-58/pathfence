@@ -19,7 +19,7 @@ can be checked without reading file contents is checked before `dest` is created
 4. At most `max_members` members, and at most `max_bytes` bytes of file contents in all.
 5. `dest` must not exist, and must be creatable.
 
-Then `dest` is created with mode 0700 (and checked to be the private directory just made). Each
+Then `dest` is created with mode 0700 (and checked to be owned by the caller and private). Each
 directory is created with mkdirat and opened, one component at a time, with
 `openat2(RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_XDEV)`; each file is created with
 `O_CREAT | O_EXCL` and, once written, given mode 0755 if its owner could execute it in the archive
