@@ -92,8 +92,9 @@ def check_all(paths, allow, deny=(), base=None):
         if r["decision"] == "allow" and r.get("path") != (r["root"] if r["rel"] == "." else r["root"] + "/" + r["rel"]):
             return reject("pathfence's root and rel do not name its path")
         results.append(r)
-    # The exit status is 0 exactly when every path is allowed; a mismatch means a confused answer.
-    if all(r["decision"] == "allow" for r in results) != (p.returncode == 0):
+    # The exit status is 0 when every path is allowed and 1 otherwise; anything else (a crash, a
+    # signal) means a confused answer.
+    if p.returncode != (0 if all(r["decision"] == "allow" for r in results) else 1):
         return reject(f"pathfence exit {p.returncode} disagrees with its decisions")
     return results
 

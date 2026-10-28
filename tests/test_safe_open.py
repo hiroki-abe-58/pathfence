@@ -122,8 +122,10 @@ class UnusableAnswers(unittest.TestCase):
         with pathfence_says(1, a + deny_b):
             self.assertEqual([r["decision"] for r in safe_open.check_all(["src/a", "src/b"], **self.POLICY)],
                              ["allow", "deny"])
-        # One bad part makes every answer a reject: a missing or swapped answer, a wrong exit status.
-        for code, out in ((0, a), (0, b + a), (0, a + deny_b), (1, a + b), (0, a + b + b)):
+        # One bad part makes every answer a reject: a missing or swapped answer, a wrong exit status
+        # (only 1 goes with a deny; 3 or a signal is a crash, not an answer).
+        for code, out in ((0, a), (0, b + a), (0, a + deny_b), (1, a + b), (0, a + b + b),
+                          (3, a + deny_b), (-11, a + deny_b), (137, a + deny_b)):
             with self.subTest(code=code, out=out), pathfence_says(code, out):
                 self.assertEqual([r["decision"] for r in safe_open.check_all(["src/a", "src/b"], **self.POLICY)],
                                  ["reject", "reject"])
