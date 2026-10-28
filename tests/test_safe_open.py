@@ -113,6 +113,21 @@ class UnusableAnswers(unittest.TestCase):
         with pathfence_says(0, answer(input=".", path="/w", rel=".")):
             self.assertEqual(safe_open.check(".", **self.POLICY)["decision"], "allow")
 
+    def test_several_paths_need_one_usable_answer_each(self):
+        a, b = answer(), answer(input="src/b", path="/w/src/b", rel="src/b")
+        deny_b = answer(input="src/b", decision="deny", path="/w/.git/b")
+        with pathfence_says(0, a + b):
+            self.assertEqual([r["rel"] for r in safe_open.check_all(["src/a", "src/b"], **self.POLICY)],
+                             ["src/a", "src/b"])
+        with pathfence_says(1, a + deny_b):
+            self.assertEqual([r["decision"] for r in safe_open.check_all(["src/a", "src/b"], **self.POLICY)],
+                             ["allow", "deny"])
+        # One bad part makes every answer a reject: a missing or swapped answer, a wrong exit status.
+        for code, out in ((0, a), (0, b + a), (0, a + deny_b), (1, a + b), (0, a + b + b)):
+            with self.subTest(code=code, out=out), pathfence_says(code, out):
+                self.assertEqual([r["decision"] for r in safe_open.check_all(["src/a", "src/b"], **self.POLICY)],
+                                 ["reject", "reject"])
+
     def test_a_usage_error_refuses_and_says_why(self):
         with pathfence_says(2, b"", b"not a canonical absolute directory: /w/\n"):
             r = safe_open.check("src/a", allow=["/w/"])

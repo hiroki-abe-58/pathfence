@@ -40,14 +40,19 @@ class Refused(Exception):
 
 def check(path, allow, deny=(), base=None):
     """PathFence's answer for one path, as a dict; a `reject` whenever the answer is unusable."""
+    return check_all([path], allow, deny, base)[0]
+
+
+def check_all(paths, allow, deny=(), base=None):
+    """PathFence's answers for a list of paths, in order, from one run of `pathfence check`. If any
+    part of the answer is unusable, every path gets a `reject`."""
     for name, value in (("allow", allow), ("deny", deny)):
         if isinstance(value, (str, bytes)):
             raise TypeError(f"{name} must be a list of strings, not a single string")
     allow, deny = [os.fspath(a) for a in allow], [os.fspath(d) for d in deny]
     if not all(isinstance(x, str) for x in allow + deny):
         raise TypeError("allow and deny must hold str or os.PathLike paths")
-    if isinstance(path, os.PathLike):
-        path = os.fspath(path)
+    paths = [os.fspath(p) if isinstance(p, os.PathLike) else p for p in paths]
     args = [PATHFENCE, "check"]
     for a in allow:
         args += ["--allow", a]
@@ -55,34 +60,42 @@ def check(path, allow, deny=(), base=None):
         args += ["--deny", d]
     if base is not None:
         args += ["--base", base]
+
+    def reject(reason):
+        return [{"decision": "reject", "reason": reason} for _ in paths]
+
     try:
-        p = subprocess.run(args + ["--", path], stdin=subprocess.DEVNULL, capture_output=True, timeout=TIMEOUT,
+        p = subprocess.run(args + ["--"] + paths, stdin=subprocess.DEVNULL, capture_output=True, timeout=TIMEOUT,
                            check=False)
     except (OSError, ValueError, TypeError, subprocess.SubprocessError) as e:
-        return {"decision": "reject", "reason": f"pathfence did not run: {e}"}
+        return reject(f"pathfence did not run: {e}")
     if p.returncode == 2:  # a usage error, e.g. a root that is not canonical
-        return {"decision": "reject", "reason": "pathfence: " + p.stderr.decode("utf-8", "replace").strip()}
+        return reject("pathfence: " + p.stderr.decode("utf-8", "replace").strip())
     lines = p.stdout.decode("ascii", "replace").split("\n")
-    if not p.stdout.isascii() or len(lines) != 2 or lines[1] != "":  # the output is ASCII by design
-        return {"decision": "reject", "reason": f"unexpected pathfence output (exit {p.returncode})"}
-    try:
-        r = json.loads(lines[0])
-    except ValueError:
-        r = None
-    if not isinstance(r, dict) or r.get("input") != path:
-        return {"decision": "reject", "reason": "pathfence answered for something else"}
-    if r.get("decision") not in ("allow", "deny", "reject"):
-        return {"decision": "reject", "reason": "pathfence gave no decision"}
+    # The output is ASCII by design, one line per path.
+    if not p.stdout.isascii() or len(lines) != len(paths) + 1 or lines[-1] != "":
+        return reject(f"unexpected pathfence output (exit {p.returncode})")
+    results = []
+    for path, line in zip(paths, lines):
+        try:
+            r = json.loads(line)
+        except ValueError:
+            r = None
+        if not isinstance(r, dict) or r.get("input") != path:
+            return reject("pathfence answered for something else")
+        if r.get("decision") not in ("allow", "deny", "reject"):
+            return reject("pathfence gave no decision")
+        # The file is opened beneath `root`, so a wrong `root` (say `/`) would open a file outside the roots.
+        if r["decision"] == "allow" and (r.get("root") not in allow or not isinstance(r.get("rel"), str)):
+            return reject("pathfence named a root that is not an allowed root")
+        # `rel` is what gets opened, so it must name the reported `path` (`.` is the root itself).
+        if r["decision"] == "allow" and r.get("path") != (r["root"] if r["rel"] == "." else r["root"] + "/" + r["rel"]):
+            return reject("pathfence's root and rel do not name its path")
+        results.append(r)
     # The exit status is 0 exactly when every path is allowed; a mismatch means a confused answer.
-    if (r["decision"] == "allow") != (p.returncode == 0):
-        return {"decision": "reject", "reason": f"pathfence exit {p.returncode} disagrees with its decision"}
-    # The file is opened beneath `root`, so a wrong `root` (say `/`) would open a file outside the roots.
-    if r["decision"] == "allow" and (r.get("root") not in allow or not isinstance(r.get("rel"), str)):
-        return {"decision": "reject", "reason": "pathfence named a root that is not an allowed root"}
-    # `rel` is what gets opened, so it must name the reported `path` (`.` is the root itself).
-    if r["decision"] == "allow" and r.get("path") != (r["root"] if r["rel"] == "." else r["root"] + "/" + r["rel"]):
-        return {"decision": "reject", "reason": "pathfence's root and rel do not name its path"}
-    return r
+    if all(r["decision"] == "allow" for r in results) != (p.returncode == 0):
+        return reject(f"pathfence exit {p.returncode} disagrees with its decisions")
+    return results
 
 
 def openat2(dirfd, path, flags, mode=0, resolve=RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS):
