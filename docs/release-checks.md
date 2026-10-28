@@ -15,8 +15,8 @@ The version is written in three places:
 * `pathfence --version`, run on the binary the tests use, prints exactly `pathfence <version>` and
   exits 0.
 * `README.md` has exactly one line starting with `Status:`, and the only version on it is
-  `v<version>`. A version there is `v` and a digit, up to the last letter or digit before a space or
-  punctuation (`v0.1.0,` is 0.1.0). The rest of the wording is free.
+  `v<version>`. A version there is `v`, a digit, then letters, digits, `.`, `+` or `-`, ending at a
+  letter or digit (`v0.1.0,` is 0.1.0; `v0.2.0-rc.1.` is 0.2.0-rc.1). The rest of the wording is free.
 
 The strings are compared as written in `lakefile.lean`. For a plain `major.minor.patch` such as
 0.1.0, that is also the version in the wheel's metadata.
@@ -38,7 +38,14 @@ It never skips: a missing file, or a pattern found zero or several times, fails 
   would fail.
 
 With publish.yml's check that the release tag is `v` and the wheel's version, the tag, the package,
-`pathfence --version` and the README status line name one version.
+`pathfence --version` and the README status line name one version (the same string, for a plain
+`major.minor.patch`; hatch normalizes pre-releases such as `0.2.0-rc.1` to `0.2.0rc1`).
+
+## Bumping the version
+
+Change all three places in one commit: `version` in `lakefile.lean` (and its pin in
+`scripts/audit.sh`, which pins that file), the string in `Main.lean`, and the `Status:` line in
+`README.md`.
 
 ## What it does not check
 
