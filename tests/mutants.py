@@ -2,8 +2,8 @@
 
 Copies the repository to a temporary directory, then, for each mutant, rebuilds the CLI with a
 mutated copy of the decision functions (the proven library is untouched) and runs the test suite.
-M0 is the unmutated control and must pass; every other mutant must make the suite fail. Exits 1
-otherwise.
+The E mutants instead plant a bug in examples/safe_extract.py and use the unmutated CLI. M0 is the
+unmutated control and must pass; every other mutant must make the suite fail. Exits 1 otherwise.
 
     python3 tests/mutants.py
 """
@@ -73,6 +73,13 @@ MUTANTS = {
         "@UNDER@": "(pol.allow.find? fun a => a.isPrefixOf p).map fun a => (a, p.drop (a.length + 1))"},
 }
 
+# Bugs planted in examples/safe_extract.py, as (text, replacement); the CLI is the control's.
+EXAMPLE_MUTANTS = {
+    "E1 hard links extracted as files": ("m.isreg() or m.isdir()", "m.isreg() or m.isdir() or m.islnk()"),
+    "E2 files created without O_EXCL": ("os.O_CREAT | os.O_EXCL", "os.O_CREAT | os.O_TRUNC"),
+    "E3 the raw name created instead of rel": ('r["rel"].split("/")', 'name.split("/")'),
+}
+
 
 def main():
     tmp = tempfile.mkdtemp()
@@ -83,9 +90,13 @@ def main():
     hooks = ["let d := pol.checkString s;", "match pol.allowedUnder p with", "/-- A relative path: its segments"]
     for h in hooks:
         assert orig.count(h) == 1, f"Main.lean changed; update the mutation hooks ({h!r})"
+    example = os.path.join(repo, "examples", "safe_extract.py")
+    example_orig = open(example, encoding="utf-8").read()
+    for old, _ in EXAMPLE_MUTANTS.values():
+        assert example_orig.count(old) == 1, f"safe_extract.py changed; update the example mutants ({old!r})"
     ok = True
     try:
-        for name, over in MUTANTS.items():
+        for name, over in list(MUTANTS.items()) + [(n, {}) for n in EXAMPLE_MUTANTS]:
             pre = PRELUDE
             for k, v in dict(BASE, **over).items():
                 pre = pre.replace(k, v)
@@ -93,6 +104,8 @@ def main():
             m = m.replace(hooks[1], "match Mut.allowedUnder pol p with")
             m = m.replace(hooks[2], pre + "\n" + hooks[2])
             open(main_lean, "w", encoding="utf-8").write(m)
+            old, new = EXAMPLE_MUTANTS.get(name, ("", ""))
+            open(example, "w", encoding="utf-8").write(example_orig.replace(old, new) if old else example_orig)
             b = subprocess.run(["lake", "build", "pathfence"], cwd=repo, capture_output=True, text=True)
             if b.returncode != 0:
                 print(f"{name}: BUILD FAILED\n{b.stdout[-1500:]}{b.stderr[-1500:]}")
