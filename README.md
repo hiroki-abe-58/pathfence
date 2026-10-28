@@ -152,10 +152,13 @@ stdin, the conversion between `String` and `List Char`, JSON output and exit cod
     allowed root, malformed output. Each refuses before anything is opened.
   * the safe-extract example against archives built by the test:
     * the members of the CVE-2025-4517 proof of concept;
-    * links, devices and FIFOs, names that leave `dest` or are not portable, duplicate members, and
-      archives over the limits. Each must leave nothing behind;
-    * links planted in `dest` mid-extraction by a simulated second process. Each must make openat2
-      fail without anything outside `dest` changing.
+    * links, devices and FIFOs, names that leave `dest` or are not portable, duplicate members,
+      archives over the limits, and archives `tarfile` or `zipfile` cannot read completely
+      (truncated, garbage after a member, a negative size, mismatched zip headers). Each must
+      raise `Refused` and leave nothing behind;
+    * links planted in `dest` mid-extraction by a simulated second process, a replaced `dest`, and a
+      bad CRC in the middle of a zip. Each must raise `OSError` without anything outside `dest`
+      changing.
 * `tests/mutants.py` checks the tests themselves. It rebuilds the CLI with eleven plausible bugs, and
   plants three in `examples/safe_extract.py`, and requires each one to make the suite fail.
   * The CLI bugs include the CVE-style string prefix, an off-by-one in the beneath rule, an ignored
@@ -261,19 +264,27 @@ of the same name through it
 [`examples/safe_extract.py`](examples/safe_extract.py) (`safe_extract(archive, dest)`, for tar and
 zip) refuses instead of repairing. Before it writes anything, it checks:
 
-* the member types: only regular files and directories. A symlink, a hard link, a device, a FIFO, or
-  a zip entry marked as one of these or encrypted refuses the whole archive;
-* the names: UTF-8, with no control characters, no `\`, no leading `/` and no drive prefix (`C:`).
-  PathFence must allow each name relative to `dest` (`safe_open.check_all`, one run per 256 names);
+* the archive: `tarfile` or `zipfile` must be able to read it. A tar archive must have an
+  end-of-archive block where its last member ends, because `tarfile` stops without an error at a
+  truncated or invalid header. Each zip entry's local header must name the same file, with a method
+  `zipfile` can decompress;
+* the member types: only regular files and directories. A symlink, a hard link, a device, a FIFO, a
+  negative tar size, or a zip entry marked as one of these or encrypted refuses the whole archive;
+* the names: UTF-8, with no NUL or other control characters, no `\`, no leading `/`, no drive prefix
+  (`C:`) and no component longer than 255 bytes. PathFence must allow each name relative to `dest`
+  (`safe_open.check_all`, one run per 256 names);
 * the result: members are created at their `rel`, so no two may share a `rel` unless both are
   directories, and none may be inside a file;
-* the size: at most `max_members` members and `max_bytes` bytes of contents.
+* the size: at most `max_members` members and `max_bytes` bytes of contents, counted again as they
+  are written.
 
-Then it creates `dest`, which must not exist, with mode 0700. Each directory is created with
-`mkdirat` and opened, one component at a time, with
-`openat2(RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_XDEV)`. Each file is created with
-`O_CREAT | O_EXCL` and given mode 0755 or 0644 with `fchmod`. Owners, times, and setuid, setgid or
-sticky bits are never set.
+If any of these fails, or `dest` cannot be created, it raises `Refused` and nothing has been written.
+Otherwise it creates `dest`, which must not exist, with mode 0700, and checks that the directory it
+opened is that private directory. Each directory is created with `mkdirat` and opened, one
+component at a time, with `openat2(RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_XDEV)`. Each
+file is created with `O_CREAT | O_EXCL` and given mode 0755 or 0644 with `fchmod`. Owners, times, and
+setuid, setgid or sticky bits are never set. From here on any failure is an `OSError`, and what was
+written so far stays in `dest`, which is the caller's to remove.
 
 The member-type policy and the kernel carry the security, not the theorems. With no links in the
 archive, no member can redirect a later one. A link that appears in `dest` anyway, made by another
@@ -286,17 +297,23 @@ The theorems cover only the name layer:
 It does not cover:
 
 * macOS and Windows. It needs openat2 and refuses to run elsewhere.
-* Case-insensitive or normalising file systems, where two different names can be one file. On
-  Linux, `O_EXCL` should turn such a collision in a casefold directory into a refusal, but this is
-  not tested.
+* Case-insensitive or normalising file systems, where two different names can be one file. In a
+  Linux casefold directory, `O_CREAT | O_EXCL` should make the second of two such names fail with
+  `EEXIST`: an `OSError` after the members before it were written, not a refusal. This is not
+  tested; casefold needs a file system made with it.
 * A local process that renames a directory while it is being extracted into. The open handles follow
   the directory, out of `dest` too. That is why `dest` is created private; keep it so until the call
   returns.
 * What the files contain, and bugs in `tarfile` or `zipfile` themselves: it extracts the members
   they report.
-* Partial results. A kernel refusal (another process interfering) or a read error (a truncated
-  archive, a bad CRC) raises `OSError` after some members may have been written, and leaves them in
-  `dest`.
+* Partial results. A kernel refusal (another process interfering), a full disk, or contents that
+  cannot be read (a bad CRC, a corrupt compressed stream) are found only while writing. They raise
+  `OSError` (`EIO`, chained from `tarfile`'s or `zipfile`'s exception, for a read error) and leave
+  the members written so far in `dest`.
+* Some limits apply late, or by failing:
+  * `tarfile` reads GNU long-name and pax headers into memory before any of these checks apply.
+  * Names that do not fit on one command line (`E2BIG`, for example a name over 128 KiB) make
+    `pathfence` fail to run, which refuses the archive.
 
 ### Performance
 
