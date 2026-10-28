@@ -128,7 +128,8 @@ stdin, the conversion between `String` and `List Char`, JSON output and exit cod
   workflow. A change to them shows in the diff, but whoever can change them can change the audit.
 
   It does not check that `Main.lean` calls the library as documented; that is left to review and
-  the tests.
+  the tests. Nor does it read this README: `tests/test_readme_theorems.py` checks that the theorem
+  table above names exactly the theorems pinned in `scripts/statements.expected`.
 * `tests/` (Python, standard library only) runs the built CLI against:
   * fixed cases, including the CVE-style inputs, invalid UTF-8, option-like paths and
     non-canonical roots, and a 1 MB path that goes 200,000 levels down and back up, which must be
